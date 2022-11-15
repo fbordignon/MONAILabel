@@ -18,6 +18,10 @@ import cv2
 import numpy as np
 import openslide
 import torch
+from torchvision.utils import make_grid
+
+from monai.data import MetaTensor
+
 from monai.apps.deepgrow.transforms import AddGuidanceSignald, AddInitialSeedPointd
 from monai.apps.nuclick.transforms import ExtractPatchd
 from monai.apps.nuclick.transforms import PostFilterLabeld as NuClickPostFilterLabeld
@@ -29,6 +33,7 @@ from monai.transforms import (
     CropForegroundd,
     MapTransform,
     RandomizableTransform,
+    SpatialPad,
     SpatialPadd,
     TorchVision,
     Transform,
@@ -415,4 +420,99 @@ class RandTorchVisiond(RandomizableTransform, MapTransform):
         for key in self.key_iterator(d):
             if self._do_transform:
                 d[key] = self.trans(d[key])
+        return d
+
+
+class ToHoverNetPatchesd(Transform):
+    def __init__(self, image="image", input_size=(270, 270), output_size=(80, 80)):
+        self.image = image
+        self.input_size = input_size
+        self.output_size = output_size
+
+    def __call__(self, data):
+        d = dict(data)
+
+        img = d[self.image]
+        w = img.shape[-2]
+        h = img.shape[-1]
+
+        x = self.output_size[0]
+        y = self.output_size[1]
+
+        debug = data.get("debug", False)
+
+        padding = SpatialPad(spatial_size=self.input_size, method="end")
+        patches = []
+        for i in range(math.ceil(w / x)):
+            for j in range(math.ceil(h / y)):
+                x1 = i * self.output_size[0]
+                y1 = j * self.output_size[1]
+                x2 = min(w, x1 + self.input_size[0])
+                y2 = min(h, y1 + self.input_size[1])
+
+                p = img[:, x1:x2, y1:y2]
+                p = padding(p)
+                patches.append(p)
+
+                if debug:
+                    p = p[:3] * 255
+                    p = torch.moveaxis(p, 0, -1).type(torch.uint8)
+                    im = Image.fromarray(p.array, mode="RGB")
+                    im.save(f"C:\\Dataset\\Pathology\\dummy\\patches\\img\\{i}x{j}.png")
+
+        d[self.image] = torch.stack(patches, dim=0)
+        d["image_spatial_size"] = (w, h)
+        return d
+
+
+class FromHoverNetPatchesd(MapTransform):
+    def __init__(
+        self,
+        keys: KeysCollection,
+        allow_missing_keys: bool = False,
+        image_spatial_size="image_spatial_size",
+        output_size=(80, 80),
+    ):
+        super().__init__(keys, allow_missing_keys)
+
+        self.image_spatial_size = image_spatial_size
+        self.output_size = output_size
+
+    def __call__(self, data):
+        d = dict(data)
+
+        img = d[self.image_spatial_size]
+        w = img[-2]
+        h = img[-1]
+
+        x = self.output_size[0]
+        y = self.output_size[1]
+        debug = data.get("debug", False)
+
+        for key in self.key_iterator(d):
+            patches = d[key]
+            c = patches[0].shape[0]
+
+            count = 0
+            pred = torch.zeros((c, w, h), dtype=patches.dtype)
+            for i in range(math.ceil(w / x)):
+                for j in range(math.ceil(h / y)):
+                    x1 = i * self.output_size[0]
+                    y1 = j * self.output_size[1]
+                    x2 = min(w, x1 + self.output_size[0])
+                    y2 = min(h, y1 + self.output_size[1])
+
+                    p = patches[count]
+                    pred[:, x1:x2, y1:y2] = p[:, 0 : (x2 - x1), 0 : (y2 - y1)]
+                    count += 1
+
+                    if debug and key == "nucleus_prediction":
+                        p = torch.softmax(p, dim=0)
+                        p = torch.argmax(p, dim=0, keepdim=True)
+                        p[p > 0] = 255
+                        p = p[0].type(torch.uint8)
+                        im = Image.fromarray(p.array if isinstance(p, MetaTensor) else p.cpu().detach().numpy())
+                        im.save(f"C:\\Dataset\\Pathology\\dummy\\patches\\lab\\{i}x{j}.png")
+
+            d[key] = pred
         return d

@@ -11,5 +11,6 @@
 
 from .classification_nuclei import ClassificationNuclei
 from .deepedit_nuclei import DeepEditNuclei
+from .hovernet_nuclei import HovernetNuclei
 from .nuclick import NuClick
 from .segmentation_nuclei import SegmentationNuclei

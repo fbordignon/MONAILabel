@@ -29,7 +29,7 @@ from monailabel.interfaces.tasks.strategy import Strategy
 from monailabel.interfaces.tasks.train import TrainTask
 from monailabel.tasks.infer.basic_infer import BasicInferTask
 from monailabel.utils.others.class_utils import get_class_names
-from monailabel.utils.others.generic import strtobool
+from monailabel.utils.others.generic import file_ext, strtobool
 
 logger = logging.getLogger(__name__)
 
@@ -207,13 +207,15 @@ def main():
         studies,
         {
             "preload": "false",
-            "models": "segmentation_nuclei,nuclick,classification_nuclei",
+            # "models": "segmentation_nuclei,nuclick,classification_nuclei",
+            "models": "hovernet_nuclei",
             "use_pretrained_model": "false",
             "consep": "true",
         },
     )
 
-    train_from_dataset(app, "nuclick", "Nuclei")
+    infer(app, "hovernet_nuclei")
+    # train_from_dataset(app, "nuclick", "Nuclei")
 
 
 def train_from_dataset(app, model, postfix):
@@ -278,6 +280,21 @@ def train(app, model):
             "pretrained": False,
         },
     )
+
+
+def infer(app, model):
+    import shutil
+
+    request = {
+        "model": model,
+        "image": "test_1",
+        # "output": "json",
+    }
+    res = app.infer(request)
+    # print(json.dumps(res, indent=2))
+    print(f"Output Extension: {file_ext(res['label'])}")
+    shutil.move(res["label"], os.path.join(app.studies, "..", f"output_image{file_ext(res['label'])}"))
+    logger.info("All Done!")
 
 
 def infer_classify(app):
