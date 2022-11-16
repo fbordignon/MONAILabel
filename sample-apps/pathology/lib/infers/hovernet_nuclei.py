@@ -15,25 +15,33 @@ from typing import Any, Callable, Dict, Sequence
 
 import numpy as np
 import torch
-from monai.inferers import Inferer, SlidingWindowInferer, SimpleInferer
-from torchvision.transforms import Compose
-
-from lib.transforms import LoadImagePatchd, PostFilterLabeld, ToHoverNetPatchesd, FromHoverNetPatchesd
-from monai.apps.pathology.transforms import GenerateWatershedMaskd, GenerateInstanceBorderd, GenerateDistanceMapd, \
-    GenerateWatershedMarkersd, Watershedd, GenerateInstanceContour, GenerateInstanceCentroid, GenerateInstanceType
+from lib.transforms import FromHoverNetPatchesd, LoadImagePatchd, PostFilterLabeld, ToHoverNetPatchesd
+from monai.apps.pathology.transforms import (
+    GenerateDistanceMapd,
+    GenerateInstanceBorderd,
+    GenerateInstanceType,
+    GenerateWatershedMarkersd,
+    GenerateWatershedMaskd,
+    Watershedd,
+)
+from monai.inferers import Inferer, SimpleInferer
 from monai.transforms import (
-    Activations,
+    Activationsd,
     AsChannelFirstd,
-    AsDiscrete,
+    AsDiscreted,
     BoundingRect,
+    CastToTyped,
     EnsureTyped,
     FillHoles,
     GaussianSmooth,
+    ScaleIntensityRanged,
     SqueezeDimd,
-    ToNumpyd, Transform, CastToTyped, Activationsd, AsDiscreted, CenterSpatialCropd, Padd, SpatialPadd,
-    ScaleIntensityRanged, RemoveSmallObjectsd, SobelGradientsd, BorderPadd,
+    ToNumpyd,
+    Transform,
 )
-from monai.utils import HoVerNetBranch, convert_to_tensor
+from monai.utils import HoVerNetBranch
+from tqdm import tqdm
+
 from monailabel.interfaces.tasks.infer_v2 import InferType
 from monailabel.tasks.infer.basic_infer import BasicInferTask
 from monailabel.transform.post import FindContoursd
@@ -48,15 +56,15 @@ class HovernetNuclei(BasicInferTask):
     """
 
     def __init__(
-            self,
-            path,
-            network=None,
-            roi_size=(256, 256),
-            type=InferType.SEGMENTATION,
-            labels=None,
-            dimension=2,
-            description="A pre-trained hovernet model for segmentation + classification of Nuclei",
-            **kwargs,
+        self,
+        path,
+        network=None,
+        roi_size=(256, 256),
+        type=InferType.SEGMENTATION,
+        labels=None,
+        dimension=2,
+        description="A pre-trained hovernet model for segmentation + classification of Nuclei",
+        **kwargs,
     ):
         super().__init__(
             path=path,
@@ -93,11 +101,14 @@ class HovernetNuclei(BasicInferTask):
         np = []
         nc = []
         hv = []
-        for i in range(math.ceil(inputs.shape[0] / max_batch_size)):
+
+        loglevel = data.get("logging", "INFO")
+        super().set_loglevel("WARNING")
+        for i in tqdm(range(math.ceil(inputs.shape[0] / max_batch_size))):
             x1 = i * max_batch_size
             x2 = min(inputs.shape[0], x1 + max_batch_size)
             batched_in = inputs[x1:x2]
-            logger.info(f"Running Infer for sub-batch: {x1} to {x2} of {inputs.shape[0]}")
+            logger.debug(f"Running Infer for sub-batch: {x1} to {x2} of {inputs.shape[0]}")
 
             data[self.input_key] = batched_in
             data = super().run_inferer(data, False, device)
@@ -105,6 +116,7 @@ class HovernetNuclei(BasicInferTask):
             np.append(data[HoVerNetBranch.NP])
             nc.append(data[HoVerNetBranch.NC])
             hv.append(data[HoVerNetBranch.HV])
+        super().set_loglevel(loglevel.upper())
 
         data[HoVerNetBranch.NP] = torch.cat(np)
         data[HoVerNetBranch.NC] = torch.cat(nc)
@@ -114,17 +126,15 @@ class HovernetNuclei(BasicInferTask):
     def post_transforms(self, data=None) -> Sequence[Callable]:
         return [
             FromHoverNetPatchesd(keys=(HoVerNetBranch.NP, HoVerNetBranch.NC, HoVerNetBranch.HV)),
-            Activationsd(keys=(HoVerNetBranch.NP, HoVerNetBranch.NC), softmax=True),
-            AsDiscreted(keys=(HoVerNetBranch.NP, HoVerNetBranch.NC), argmax=True),
-            # SobelGradientsd(keys=HoVerNetBranch.NP, kernel_size=21),
-            RemoveSmallObjectsd(keys=HoVerNetBranch.NP),
-
-            #GenerateInstanceBorderd(keys="mask", hover_map_key=HoVerNetBranch.HV, kernel_size=21),
-            # GenerateDistanceMapd(keys="mask", border_key="border", smooth_fn=GaussianSmooth()),
-            # GenerateWatershedMarkersd(
-            #     keys="mask", border_key="border", threshold=0.99, radius=3, postprocess_fn=FillHoles(connectivity=2)
-            # ),
-            # Watershedd(keys="dist", mask_key="mask", markers_key="markers"),
+            Activationsd(keys=HoVerNetBranch.NC, softmax=True),
+            AsDiscreted(keys=HoVerNetBranch.NC, argmax=True),
+            GenerateWatershedMaskd(keys=HoVerNetBranch.NP, softmax=True),
+            GenerateInstanceBorderd(keys="mask", hover_map_key=HoVerNetBranch.HV, kernel_size=21),
+            GenerateDistanceMapd(keys="mask", border_key="border", smooth_fn=GaussianSmooth()),
+            GenerateWatershedMarkersd(
+                keys="mask", border_key="border", threshold=0.99, radius=3, postprocess_fn=FillHoles(connectivity=2)
+            ),
+            Watershedd(keys="dist", mask_key="mask", markers_key="markers"),
             PostProcessWS(labels=self.labels),
             SqueezeDimd(keys="pred", dim=0),
             ToNumpyd(keys="pred", dtype=np.uint8),
@@ -139,65 +149,31 @@ class HovernetNuclei(BasicInferTask):
 
 class PostProcessWS(Transform):
     def __init__(self, labels=None) -> None:
-        self.labels = labels
+        self.labels = {v: k for k, v in labels.items()}
 
     def __call__(self, data):
         d = dict(data)
-        device = d.get("device")
 
-        return_binary = True
-        return_centroids = False
-        output_classes = None
+        pred_inst = d["dist"]
+        type_pred = d[HoVerNetBranch.NC]
+        elements = []
 
-        type_pred = None
-        pred_inst = d[HoVerNetBranch.NP]
+        result = np.zeros_like(pred_inst)
+        inst_id_list = np.unique(pred_inst)[1:]  # exclude background
+        for inst_id in inst_id_list:
+            inst_map = pred_inst == inst_id
+            inst_map = inst_map.astype(np.uint8)
+            inst_bbox = BoundingRect()(inst_map)
 
-        inst_info_dict = {}
-        if return_centroids:
-            inst_id_list = np.unique(pred_inst)[1:]  # exclude background
-            for inst_id in inst_id_list:
-                inst_map = pred_inst == inst_id
-                inst_bbox = BoundingRect()(inst_map)
-                inst_map = inst_map[:, inst_bbox[0][0]: inst_bbox[0][1], inst_bbox[0][2]: inst_bbox[0][3]]
-                offset = [inst_bbox[0][2], inst_bbox[0][0]]
-                try:
-                    inst_contour = GenerateInstanceContour()(inst_map, offset)
-                except:
-                    inst_contour = GenerateInstanceContour()(FillHoles(connectivity=2)(inst_map), offset)
+            inst_type, type_prob = GenerateInstanceType()(
+                bbox=inst_bbox,
+                type_pred=type_pred,
+                seg_pred=pred_inst,
+                instance_id=inst_id,
+            )
+            result = np.where(pred_inst == inst_id, inst_type, result)
 
-                inst_centroid = GenerateInstanceCentroid()(inst_map, offset)
-                if inst_contour is not None:
-                    inst_info_dict[inst_id] = {  # inst_id should start at 1
-                        "bounding_box": inst_bbox,
-                        "centroid": inst_centroid,
-                        "contour": inst_contour,
-                        "type_probability": None,
-                        "type": None,
-                    }
+        logger.info(f"Total Instances: {len(elements)}; Labels Found: {np.unique(result)}")
 
-        if output_classes is not None:
-            for inst_id in list(inst_info_dict.keys()):
-                inst_type, type_prob = GenerateInstanceType()(
-                    bbox=inst_info_dict[inst_id]["bounding_box"],
-                    type_pred=type_pred,
-                    seg_pred=pred_inst,
-                    instance_id=inst_id,
-                )
-                inst_info_dict[inst_id]["type"] = inst_type
-                inst_info_dict[inst_id]["type_probability"] = type_prob
-
-        logger.info(f"Pred Values: {np.unique(pred_inst, return_counts=True)}")
-
-        # pred_inst = convert_to_tensor(pred_inst, device=device)
-        # pred_type_map = torch.zeros_like(pred_inst)
-        # for key, value in inst_info_dict.items():
-        #     pred_type_map[pred_inst == key] = value["type"]
-        # pred_type_map = AsDiscrete(to_onehot=len(self.labels) + 1)(pred_type_map)
-        #
-        # if return_binary:
-        #     pred_inst[pred_inst > 0] = 1
-
-        d["pred"] = pred_inst
-        d["pred_class"] = None
-        d["pred_instances"] = inst_info_dict
+        d["pred"] = result
         return d

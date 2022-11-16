@@ -209,7 +209,7 @@ def main():
             "preload": "false",
             # "models": "segmentation_nuclei,nuclick,classification_nuclei",
             "models": "hovernet_nuclei",
-            "use_pretrained_model": "false",
+            "use_pretrained_model": "true",
             "consep": "true",
         },
     )
@@ -287,7 +287,7 @@ def infer(app, model):
 
     request = {
         "model": model,
-        "image": "test_1",
+        "image": "test_10",
         # "output": "json",
     }
     res = app.infer(request)

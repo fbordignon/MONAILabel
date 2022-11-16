@@ -18,10 +18,6 @@ import cv2
 import numpy as np
 import openslide
 import torch
-from torchvision.utils import make_grid
-
-from monai.data import MetaTensor
-
 from monai.apps.deepgrow.transforms import AddGuidanceSignald, AddInitialSeedPointd
 from monai.apps.nuclick.transforms import ExtractPatchd
 from monai.apps.nuclick.transforms import PostFilterLabeld as NuClickPostFilterLabeld
@@ -32,8 +28,8 @@ from monai.transforms import (
     Compose,
     CropForegroundd,
     MapTransform,
+    Pad,
     RandomizableTransform,
-    SpatialPad,
     SpatialPadd,
     TorchVision,
     Transform,
@@ -439,26 +435,43 @@ class ToHoverNetPatchesd(Transform):
         x = self.output_size[0]
         y = self.output_size[1]
 
-        debug = data.get("debug", False)
+        # debug = data.get("debug", False)
 
-        padding = SpatialPad(spatial_size=self.input_size, method="end")
+        win_size = self.input_size
+        msk_size = step_size = self.output_size
+
+        def get_last_steps(length, msk_size, step_size):
+            nr_step = math.ceil((length - msk_size) / step_size)
+            last_step = (nr_step + 1) * step_size
+            return int(last_step), int(nr_step + 1)
+
+        last_w, _ = get_last_steps(w, msk_size[0], step_size[0])
+        last_h, _ = get_last_steps(h, msk_size[1], step_size[1])
+
+        padl = (win_size[0] - step_size[0]) // 2
+        padt = (win_size[1] - step_size[1]) // 2
+        padr = last_w + win_size[0] - w
+        padb = last_h + win_size[1] - h
+
+        padding = Pad()
+        img = padding(img, to_pad=((0, 0), (padl, padr), (padt, padb)), mode="reflect")
+
         patches = []
         for i in range(math.ceil(w / x)):
             for j in range(math.ceil(h / y)):
                 x1 = i * self.output_size[0]
                 y1 = j * self.output_size[1]
-                x2 = min(w, x1 + self.input_size[0])
-                y2 = min(h, y1 + self.input_size[1])
+                x2 = x1 + self.input_size[0]
+                y2 = y1 + self.input_size[1]
 
                 p = img[:, x1:x2, y1:y2]
-                p = padding(p)
                 patches.append(p)
 
-                if debug:
-                    p = p[:3] * 255
-                    p = torch.moveaxis(p, 0, -1).type(torch.uint8)
-                    im = Image.fromarray(p.array, mode="RGB")
-                    im.save(f"C:\\Dataset\\Pathology\\dummy\\patches\\img\\{i}x{j}.png")
+                # if debug:
+                #     p = p[:3] * 255
+                #     p = torch.moveaxis(p, 0, -1).type(torch.uint8)
+                #     im = Image.fromarray(p.array, mode="RGB")
+                #     im.save(f"/localhome/sachi/Dataset/Pathology/dummy/patches/img/{i}x{j}.png")
 
         d[self.image] = torch.stack(patches, dim=0)
         d["image_spatial_size"] = (w, h)
@@ -487,7 +500,7 @@ class FromHoverNetPatchesd(MapTransform):
 
         x = self.output_size[0]
         y = self.output_size[1]
-        debug = data.get("debug", False)
+        # debug = data.get("debug", False)
 
         for key in self.key_iterator(d):
             patches = d[key]
@@ -506,13 +519,13 @@ class FromHoverNetPatchesd(MapTransform):
                     pred[:, x1:x2, y1:y2] = p[:, 0 : (x2 - x1), 0 : (y2 - y1)]
                     count += 1
 
-                    if debug and key == "nucleus_prediction":
-                        p = torch.softmax(p, dim=0)
-                        p = torch.argmax(p, dim=0, keepdim=True)
-                        p[p > 0] = 255
-                        p = p[0].type(torch.uint8)
-                        im = Image.fromarray(p.array if isinstance(p, MetaTensor) else p.cpu().detach().numpy())
-                        im.save(f"C:\\Dataset\\Pathology\\dummy\\patches\\lab\\{i}x{j}.png")
+                    # if debug and key == "nucleus_prediction":
+                    #     p = torch.softmax(p, dim=0)
+                    #     p = torch.argmax(p, dim=0, keepdim=True)
+                    #     p[p > 0] = 255
+                    #     p = p[0].type(torch.uint8)
+                    #     im = Image.fromarray(p.array if isinstance(p, MetaTensor) else p.cpu().detach().numpy())
+                    #     im.save(f"/localhome/sachi/Dataset/Pathology/dummy/patches/lab/{i}x{j}.png")
 
             d[key] = pred
         return d

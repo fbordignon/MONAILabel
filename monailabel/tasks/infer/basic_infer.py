@@ -521,3 +521,6 @@ class BasicInferTask(InferTask):
 
     def clear(self):
         self._networks.clear()
+
+    def set_loglevel(self, level: str):
+        logger.setLevel(level.upper())

@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional, Union
 
 import lib.infers
 import lib.trainers
-from monai.networks.nets import BasicUNet, HoVerNet
+from monai.networks.nets import HoVerNet
 
 from monailabel.interfaces.config import TaskConfig
 from monailabel.interfaces.tasks.infer_v2 import InferTask
