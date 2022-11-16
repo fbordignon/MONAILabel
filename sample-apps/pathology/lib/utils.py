@@ -657,11 +657,22 @@ def main_nuclei():
     home = str(Path.home())
     for f in ["training", "validation"]:
         studies = f"{home}/Dataset/Pathology/CoNSeP/{f}"
-        output_dir = f"{home}/Dataset/Pathology/CoNSeP/{f}Nuclei"
+        output_dir = f"{home}/Dataset/Pathology/CoNSeP/{f}Seg2"
 
         logger.info(f"Generate Nuclei Dataset for: {studies}")
         datastore = LocalDatastore(studies, extensions=("*.png", "*.mat"))
-        split_dataset(datastore, output_dir, "consep_nuclei", None, None, limit=0)
+        # split_dataset(datastore, output_dir, "consep", None, None, limit=0)
+
+        class_count = {1: 0, 2: 0, 3: 0, 4: 0}
+        ds = datastore.datalist()
+        for d in ds:
+            m = scipy.io.loadmat(d["label"])
+            for class_id in m["inst_type"]:
+                class_id = int(class_id)
+                class_id = 3 if class_id in (3, 4) else 4 if class_id in (5, 6, 7) else class_id  # override
+                class_count[class_id] = class_count.get(class_id, 0) + 1
+
+        logger.info(f"{f} => Label Classes: {class_count}")
 
 
 if __name__ == "__main__":

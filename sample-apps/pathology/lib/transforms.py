@@ -416,3 +416,83 @@ class RandTorchVisiond(RandomizableTransform, MapTransform):
             if self._do_transform:
                 d[key] = self.trans(d[key])
         return d
+
+
+class Agumentd(RandomizableTransform, MapTransform):
+    def __init__(self, keys: KeysCollection, allow_missing_keys: bool = False, prob=0.9) -> None:
+        MapTransform.__init__(self, keys, allow_missing_keys)
+        RandomizableTransform.__init__(self, prob)
+
+    def gaussian_blur(self, img, max_ksize=3):
+        ksize = self.R.randint(0, max_ksize, size=(2,))
+        ksize = tuple((ksize * 2 + 1).tolist())
+
+        ret = cv2.GaussianBlur(img, ksize, sigmaX=0, sigmaY=0, borderType=cv2.BORDER_REPLICATE)
+        ret = np.reshape(ret, img.shape)
+        ret = ret.astype(np.uint8)
+        return ret
+
+    def median_blur(self, img, max_ksize=3):
+        ksize = self.R.randint(0, max_ksize)
+        ksize = ksize * 2 + 1
+        ret = cv2.medianBlur(img, ksize)
+        ret = ret.astype(np.uint8)
+        return ret
+
+    def add_to_hue(self, img, range=(-8, 8)):
+        hue = self.R.uniform(*range)
+        hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+        if hsv.dtype.itemsize == 1:
+            # OpenCV uses 0-179 for 8-bit images
+            hsv[..., 0] = (hsv[..., 0] + hue) % 180
+        else:
+            # OpenCV uses 0-360 for floating point images
+            hsv[..., 0] = (hsv[..., 0] + 2 * hue) % 360
+        ret = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
+        ret = ret.astype(np.uint8)
+        return ret
+
+    def add_to_saturation(self, img, range=(-0.2, 0.2)):
+        value = 1 + self.R.uniform(*range)
+        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        ret = img * value + (gray * (1 - value))[:, :, np.newaxis]
+        ret = np.clip(ret, 0, 255)
+        ret = ret.astype(np.uint8)
+        return ret
+
+    def add_to_contrast(self, img, range=(0.75, 1.25)):
+        value = self.R.uniform(*range)
+        mean = np.mean(img, axis=(0, 1), keepdims=True)
+        ret = img * value + mean * (1 - value)
+        ret = np.clip(ret, 0, 255)
+        ret = ret.astype(np.uint8)
+        return ret
+
+    def add_to_brightness(self, img, range=(-26, 26)):
+        value = self.R.uniform(*range)
+        ret = np.clip(img + value, 0, 255)
+        ret = ret.astype(np.uint8)
+        return ret
+
+    def __call__(self, data: Mapping[Hashable, torch.Tensor]) -> Dict[Hashable, torch.Tensor]:
+        d = dict(data)
+        self.randomize(None)
+
+        for key in self.key_iterator(d):
+            if self._do_transform:
+                img = d[key].array
+                img = self.gaussian_blur(img) if self.R.choice([0, 1]) else self.median_blur(img)
+
+                l = [0, 1, 2, 3]
+                self.R.shuffle(l)
+                for i in l:
+                    if i == 0:
+                        img = self.add_to_hue(img)
+                    if i == 1:
+                        img = self.add_to_saturation(img)
+                    if i == 2:
+                        img = self.add_to_brightness(img)
+                    if i == 3:
+                        img = self.add_to_contrast(img)
+                d[key].array = img
+        return d
