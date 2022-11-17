@@ -199,7 +199,7 @@ def main():
     )
 
     home = str(Path.home())
-    studies = f"{home}/Dataset/Pathology/dummy"
+    studies = f"{home}/Dataset/Pathology/CoNSeP/all"
 
     app_dir = os.path.dirname(__file__)
     app = MyApp(
@@ -213,7 +213,7 @@ def main():
         },
     )
 
-    train_from_dataset(app, "segmentation_nuclei", "Seg")
+    train(app, "segmentation_nuclei")
 
 
 def train_from_dataset(app, model, postfix):
@@ -268,14 +268,15 @@ def train(app, model):
         request={
             "name": "train_01",
             "model": model,
-            "max_epochs": 5,
+            "max_epochs": 1000,
             "dataset": "CacheDataset",  # PersistentDataset, CacheDataset
-            "train_batch_size": 1,
-            "val_batch_size": 16,
-            "multi_gpu": False,
+            "train_batch_size": 2,
+            "val_batch_size": 8,
+            "multi_gpu": True,
             "val_split": 0.2,
             "dataset_limit": 0,
             "pretrained": False,
+            "n_saved": 10,
         },
     )
 

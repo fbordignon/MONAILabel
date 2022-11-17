@@ -16,7 +16,6 @@ import numpy as np
 import torch
 from ignite.metrics import Accuracy
 from lib.handlers import TensorBoardImageHandler
-from lib.transforms import Agumentd
 from lib.utils import split_dataset
 from monai.handlers import from_engine
 from monai.inferers import SlidingWindowInferer
@@ -32,6 +31,7 @@ from monai.transforms import (
     RandRotate90d,
     ScaleIntensityRangeD,
     ScaleIntensityRanged,
+    TorchVisiond,
 )
 
 from monailabel.interfaces.datastore import Datastore
@@ -45,7 +45,7 @@ class SegmentationNuclei(BasicTrainTask):
         self,
         model_dir,
         network,
-        roi_size=(512, 512),
+        roi_size=(256, 256),
         description="Pathology Semantic Segmentation for Nuclei (PanNuke Dataset)",
         **kwargs,
     ):
@@ -57,7 +57,7 @@ class SegmentationNuclei(BasicTrainTask):
         return self._network
 
     def optimizer(self, context: Context):
-        return torch.optim.Adam(context.network.parameters(), 0.0001)
+        return torch.optim.Adam(context.network.parameters(), 0.0002)
 
     def loss_function(self, context: Context):
         return DiceLoss(to_onehot_y=True, softmax=True, squared_pred=True)
@@ -84,9 +84,16 @@ class SegmentationNuclei(BasicTrainTask):
     def train_pre_transforms(self, context: Context):
         return [
             LoadImaged(keys=("image", "label"), dtype=np.uint8),
-            Agumentd(keys="image", prob=0.7),
             EnsureTyped(keys=("image", "label")),
             EnsureChannelFirstd(keys=("image", "label")),
+            TorchVisiond(
+                keys="image",
+                name="ColorJitter",
+                brightness=64.0 / 255.0,
+                contrast=0.75,
+                saturation=0.25,
+                hue=0.04,
+            ),
             RandFlipd(keys=("image", "label"), prob=0.5),
             RandRotate90d(keys=("image", "label"), prob=0.5, max_k=3, spatial_axes=(-2, -1)),
             ScaleIntensityRanged(keys="image", a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0),
@@ -97,12 +104,6 @@ class SegmentationNuclei(BasicTrainTask):
                 num_samples=16,
                 spatial_size=self.roi_size,
             ),
-            # RandSpatialCropSamplesd(
-            #     keys=("image", "label"),
-            #     num_samples=32,
-            #     roi_size=self.roi_size,
-            #     random_size=False,
-            # ),
         ]
 
     def train_post_transforms(self, context: Context):
@@ -132,13 +133,11 @@ class SegmentationNuclei(BasicTrainTask):
     def train_handlers(self, context: Context):
         handlers = super().train_handlers(context)
         if context.local_rank == 0:
-            handlers.append(
-                TensorBoardImageHandler(log_dir=context.events_dir, interval=10, batch_limit=4, tag_name="train")
-            )
+            handlers.append(TensorBoardImageHandler(log_dir=context.events_dir, batch_limit=4, tag_name="train"))
         return handlers
 
     def val_handlers(self, context: Context):
         handlers = super().val_handlers(context)
         if context.local_rank == 0:
-            handlers.append(TensorBoardImageHandler(log_dir=context.events_dir, interval=10, batch_limit=16))
+            handlers.append(TensorBoardImageHandler(log_dir=context.events_dir, batch_limit=4, tag_name="val"))
         return handlers

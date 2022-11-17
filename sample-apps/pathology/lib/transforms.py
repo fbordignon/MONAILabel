@@ -12,33 +12,18 @@
 import logging
 import math
 import pathlib
-from typing import Dict, Hashable, Mapping, Optional
 
-import cv2
 import numpy as np
 import openslide
 import torch
 from monai.apps.deepgrow.transforms import AddGuidanceSignald, AddInitialSeedPointd
-from monai.apps.nuclick.transforms import ExtractPatchd
 from monai.apps.nuclick.transforms import PostFilterLabeld as NuClickPostFilterLabeld
 from monai.config import KeysCollection
-from monai.transforms import (
-    AddChanneld,
-    CenterSpatialCrop,
-    Compose,
-    CropForegroundd,
-    MapTransform,
-    RandomizableTransform,
-    SpatialPadd,
-    TorchVision,
-    Transform,
-)
+from monai.transforms import MapTransform, Transform
 from PIL import Image
 from scipy.ndimage import binary_fill_holes
 from skimage.filters.thresholding import threshold_otsu
 from skimage.morphology import remove_small_holes, remove_small_objects
-
-from monailabel.interfaces.utils.transform import run_transforms
 
 logger = logging.getLogger(__name__)
 
@@ -119,21 +104,6 @@ class LoadImagePatchd(MapTransform):
             mode="constant",
             constant_values=0,
         )
-
-
-class ClipBorderd(MapTransform):
-    def __init__(self, keys: KeysCollection, border=2):
-        super().__init__(keys)
-        self.border = border
-
-    def __call__(self, data):
-        d = dict(data)
-        for key in self.keys:
-            img = d[key]
-            roi_size = (img.shape[-2] - self.border * 2, img.shape[-1] - self.border * 2)
-            crop = CenterSpatialCrop(roi_size=roi_size)
-            d[key] = crop(img)
-        return d
 
 
 def mask_percent(img_np):
@@ -270,7 +240,7 @@ class AddClickGuidanceSignald(AddGuidanceSignald):
         return np.concatenate([image, ns, ns], axis=0)
 
 
-class AddMaskValued(MapTransform):
+class FixMaskValued(MapTransform):
     def __init__(self, keys: KeysCollection, allow_missing_keys: bool = False, source_key="label") -> None:
         super().__init__(keys, allow_missing_keys)
         self.source_key = source_key
@@ -301,54 +271,6 @@ class FixNuclickClassd(Transform):
 
         d[self.image] = torch.cat([d[self.image], signal], dim=len(signal.shape) - 3)
         d[self.label] = max_c + self.offset
-        return d
-
-
-class LoadFromContoursd(MapTransform):
-    def __init__(self, keys: KeysCollection, allow_missing_keys: bool = False, source_key="image") -> None:
-        super().__init__(keys, allow_missing_keys)
-        self.source_key = source_key
-
-    def __call__(self, data):
-        d = dict(data)
-        location = d.get("location")
-        x = location[0] if location else 0
-        y = location[1] if location else 0
-
-        for key in self.keys:
-            contour = d[key]
-            pts = [np.array([[p[0] - x, p[1] - y] for p in contour])]
-
-            label_np = np.zeros(d[self.source_key].shape[-2:], dtype=np.uint8)
-            cv2.fillPoly(label_np, pts=pts, color=(255, 0, 0))
-            logger.info(f"Label NP: {np.unique(label_np, return_counts=True)}")
-            d[key] = label_np
-
-        return d
-
-
-class CropNuclied(Transform):
-    def __init__(self, patch_size=128, debug=True):
-        self.patch_size = patch_size
-        self.debug = debug
-
-    def __call__(self, data):
-        d = dict(data)
-        t = []
-        if d.get("label") is not None:
-            t = [
-                LoadFromContoursd(keys="label", source_key="image"),
-                AddChanneld(keys="label"),
-                CropForegroundd(keys=("image", "label"), source_key="label"),
-                SpatialPadd(keys="image", spatial_size=(self.patch_size, self.patch_size)),
-            ]
-        if d.get("centroid") is not None:
-            t = [ExtractPatchd(keys="image", patch_size=self.patch_size)]
-
-        if self.debug:
-            run_transforms(d, t, log_prefix="PRE")
-        else:
-            d = Compose(t)(d)
         return d
 
 
@@ -389,110 +311,3 @@ class NuClickPostFilterLabelExd(NuClickPostFilterLabeld):
             c = pred_classes[i] if pred_classes and i < len(pred_classes) else 1
             instance_map[this_mask_pos[:, 0], this_mask_pos[:, 1]] = c if flatten else i + 1
         return instance_map
-
-
-class RandTorchVisiond(RandomizableTransform, MapTransform):
-    backend = TorchVision.backend
-
-    def __init__(
-        self, keys: KeysCollection, name: str, allow_missing_keys: bool = False, prob: float = 0.5, *args, **kwargs
-    ) -> None:
-        MapTransform.__init__(self, keys, allow_missing_keys)
-        RandomizableTransform.__init__(self, prob)
-        self.name = name
-        self.trans = TorchVision(name, *args, **kwargs)
-
-    def set_random_state(
-        self, seed: Optional[int] = None, state: Optional[np.random.RandomState] = None
-    ) -> "RandTorchVisiond":
-        super().set_random_state(seed, state)
-        return self
-
-    def __call__(self, data: Mapping[Hashable, torch.Tensor]) -> Dict[Hashable, torch.Tensor]:
-        d = dict(data)
-        self.randomize(None)
-
-        for key in self.key_iterator(d):
-            if self._do_transform:
-                d[key] = self.trans(d[key])
-        return d
-
-
-class Agumentd(RandomizableTransform, MapTransform):
-    def __init__(self, keys: KeysCollection, allow_missing_keys: bool = False, prob=0.9) -> None:
-        MapTransform.__init__(self, keys, allow_missing_keys)
-        RandomizableTransform.__init__(self, prob)
-
-    def gaussian_blur(self, img, max_ksize=3):
-        ksize = self.R.randint(0, max_ksize, size=(2,))
-        ksize = tuple((ksize * 2 + 1).tolist())
-
-        ret = cv2.GaussianBlur(img, ksize, sigmaX=0, sigmaY=0, borderType=cv2.BORDER_REPLICATE)
-        ret = np.reshape(ret, img.shape)
-        ret = ret.astype(np.uint8)
-        return ret
-
-    def median_blur(self, img, max_ksize=3):
-        ksize = self.R.randint(0, max_ksize)
-        ksize = ksize * 2 + 1
-        ret = cv2.medianBlur(img, ksize)
-        ret = ret.astype(np.uint8)
-        return ret
-
-    def add_to_hue(self, img, range=(-8, 8)):
-        hue = self.R.uniform(*range)
-        hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
-        if hsv.dtype.itemsize == 1:
-            # OpenCV uses 0-179 for 8-bit images
-            hsv[..., 0] = (hsv[..., 0] + hue) % 180
-        else:
-            # OpenCV uses 0-360 for floating point images
-            hsv[..., 0] = (hsv[..., 0] + 2 * hue) % 360
-        ret = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
-        ret = ret.astype(np.uint8)
-        return ret
-
-    def add_to_saturation(self, img, range=(-0.2, 0.2)):
-        value = 1 + self.R.uniform(*range)
-        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-        ret = img * value + (gray * (1 - value))[:, :, np.newaxis]
-        ret = np.clip(ret, 0, 255)
-        ret = ret.astype(np.uint8)
-        return ret
-
-    def add_to_contrast(self, img, range=(0.75, 1.25)):
-        value = self.R.uniform(*range)
-        mean = np.mean(img, axis=(0, 1), keepdims=True)
-        ret = img * value + mean * (1 - value)
-        ret = np.clip(ret, 0, 255)
-        ret = ret.astype(np.uint8)
-        return ret
-
-    def add_to_brightness(self, img, range=(-26, 26)):
-        value = self.R.uniform(*range)
-        ret = np.clip(img + value, 0, 255)
-        ret = ret.astype(np.uint8)
-        return ret
-
-    def __call__(self, data: Mapping[Hashable, torch.Tensor]) -> Dict[Hashable, torch.Tensor]:
-        d = dict(data)
-        self.randomize(None)
-
-        for key in self.key_iterator(d):
-            if self._do_transform:
-                img = d[key].array
-                img = self.gaussian_blur(img) if self.R.choice([0, 1]) else self.median_blur(img)
-
-                l = [0, 1, 2, 3]
-                self.R.shuffle(l)
-                for i in l:
-                    if i == 0:
-                        img = self.add_to_hue(img)
-                    if i == 1:
-                        img = self.add_to_saturation(img)
-                    if i == 2:
-                        img = self.add_to_brightness(img)
-                    if i == 3:
-                        img = self.add_to_contrast(img)
-                d[key].array = img
-        return d

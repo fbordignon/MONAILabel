@@ -16,7 +16,7 @@ import numpy as np
 import torch
 from ignite.metrics import Accuracy
 from lib.handlers import TensorBoardImageHandler
-from lib.transforms import AddMaskValued
+from lib.transforms import FixMaskValued
 from lib.utils import split_dataset, split_nuclei_dataset
 from monai.apps.nuclick.transforms import AddPointGuidanceSignald, SplitLabeld
 from monai.handlers import from_engine
@@ -26,7 +26,6 @@ from monai.transforms import (
     Activationsd,
     AsDiscreted,
     EnsureChannelFirstd,
-    EnsureTyped,
     LoadImaged,
     RandRotate90d,
     ScaleIntensityRangeD,
@@ -105,7 +104,7 @@ class NuClick(BasicTrainTask):
         return [
             LoadImaged(keys=("image", "label"), dtype=np.uint8),
             EnsureChannelFirstd(keys=("image", "label")),
-            AddMaskValued(keys="mask_value", source_key="label"),
+            FixMaskValued(keys="mask_value", source_key="label"),
             SplitLabeld(keys="label", others="others", mask_value="mask_value", min_area=self.min_area),
             TorchVisiond(
                 keys="image", name="ColorJitter", brightness=64.0 / 255.0, contrast=0.75, saturation=0.25, hue=0.04
@@ -113,7 +112,6 @@ class NuClick(BasicTrainTask):
             RandRotate90d(keys=("image", "label", "others"), prob=0.5, spatial_axes=(0, 1)),
             ScaleIntensityRangeD(keys="image", a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0),
             AddPointGuidanceSignald(image="image", label="label", others="others"),
-            EnsureTyped(keys=("image", "label")),
             SelectItemsd(keys=("image", "label")),
         ]
 
@@ -124,10 +122,15 @@ class NuClick(BasicTrainTask):
         ]
 
     def val_pre_transforms(self, context: Context):
-        t = self.train_pre_transforms(context)
-        # drop exclusion map for AddPointGuidanceSignald
-        t[-2] = AddPointGuidanceSignald(image="image", label="label", others="others", drop_rate=1.0)
-        return t
+        return [
+            LoadImaged(keys=("image", "label"), dtype=np.uint8),
+            EnsureChannelFirstd(keys=("image", "label")),
+            FixMaskValued(keys="mask_value", source_key="label"),
+            SplitLabeld(keys="label", others="others", mask_value="mask_value", min_area=self.min_area),
+            ScaleIntensityRangeD(keys="image", a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0),
+            AddPointGuidanceSignald(image="image", label="label", others="others", drop_rate=1.0),
+            SelectItemsd(keys=("image", "label")),
+        ]
 
     def train_additional_metrics(self, context: Context):
         return {"train_acc": Accuracy(output_transform=from_engine(["pred", "label"]))}
