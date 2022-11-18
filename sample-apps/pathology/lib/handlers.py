@@ -131,15 +131,9 @@ class TensorBoardImageHandler:
             image = batch_data[bidx]["image"].detach().cpu().numpy()
             y = output_data[bidx]["label"].detach().cpu().numpy()
 
-            tag_prefix = f"{self.tag_name} - b{bidx} - " if self.batch_limit != 1 else ""
-            img_tensor = make_grid(torch.from_numpy(image[:3] * 128 + 128), normalize=True)
-            self.writer.add_image(tag=f"{tag_prefix}Image", img_tensor=img_tensor, global_step=epoch)
-
             if self.class_names:
                 sig_np = image[:3] * 128 + 128
                 sig_np[0, :, :] = np.where(image[3] > 0, 1, sig_np[0, :, :])
-                sig_tensor = make_grid(torch.from_numpy(sig_np), normalize=True)
-                self.writer.add_image(tag=f"{tag_prefix}Signal", img_tensor=sig_tensor, global_step=epoch)
                 if np.count_nonzero(image[3]) == 0:
                     self.logger.info(f"{self.tag_name} => +++++++++ BUG (Signal is ZERO)")
 
@@ -149,21 +143,25 @@ class TensorBoardImageHandler:
                 y_pred_c = np.argmax(y_pred)
 
                 tag_prefix = f"{self.tag_name} - b{bidx} - " if self.batch_limit != 1 else f"{self.tag_name} - "
-                label_pred_tag = f"{tag_prefix}Label vs Pred:"
+                label_pred_tag = f"{tag_prefix}Image/Signal/Label/Pred:"
 
-                y_img = Image.new("RGB", (200, 100))
+                y_img = Image.new("RGB", image.shape[-2:])
                 draw = ImageDraw.Draw(y_img)
                 draw.text((10, 50), self.class_names.get(f"{y_c}", f"{y_c}"))
 
-                y_pred_img = Image.new("RGB", (200, 100), "green" if y_c == y_pred_c else "red")
+                y_pred_img = Image.new("RGB", image.shape[-2:], "green" if y_c == y_pred_c else "red")
                 draw = ImageDraw.Draw(y_pred_img)
                 draw.text((10, 50), self.class_names.get(f"{y_pred_c}", f"{y_pred_c}"))
 
-                label_pred = [np.moveaxis(np.array(y_img), -1, 0), np.moveaxis(np.array(y_pred_img), -1, 0)]
                 img_tensor = make_grid(
-                    tensor=torch.from_numpy(np.array(label_pred)),
-                    nrow=3,
-                    normalize=False,
+                    tensor=[
+                        torch.from_numpy(sig_np),
+                        torch.from_numpy(np.stack((np.where(image[3] > 0, 255, 0),) * 3)),
+                        torch.from_numpy(np.moveaxis(np.array(y_img), -1, 0)),
+                        torch.from_numpy(np.moveaxis(np.array(y_pred_img), -1, 0)),
+                    ],
+                    nrow=4,
+                    normalize=True,
                     pad_value=10,
                 )
                 self.writer.add_image(tag=label_pred_tag, img_tensor=img_tensor, global_step=epoch)

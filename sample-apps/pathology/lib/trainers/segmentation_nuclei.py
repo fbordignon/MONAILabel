@@ -45,12 +45,14 @@ class SegmentationNuclei(BasicTrainTask):
         self,
         model_dir,
         network,
-        roi_size=(256, 256),
-        description="Pathology Semantic Segmentation for Nuclei (PanNuke Dataset)",
+        tile_size=(512, 512),
+        patch_size=256,
+        description="Pathology Semantic Segmentation for Nuclei",
         **kwargs,
     ):
         self._network = network
-        self.roi_size = roi_size
+        self.tile_size = tile_size
+        self.patch_size = patch_size
         super().__init__(model_dir, description, **kwargs)
 
     def network(self, context: Context):
@@ -62,7 +64,7 @@ class SegmentationNuclei(BasicTrainTask):
     def loss_function(self, context: Context):
         return DiceLoss(to_onehot_y=True, softmax=True, squared_pred=True)
 
-    def x_pre_process(self, request, datastore: Datastore):
+    def pre_process(self, request, datastore: Datastore):
         self.cleanup(request)
 
         cache_dir = os.path.join(self.get_cache_dir(request), "train_ds")
@@ -75,7 +77,7 @@ class SegmentationNuclei(BasicTrainTask):
             cache_dir=cache_dir,
             source=source,
             groups=self._labels,
-            tile_size=self.roi_size,
+            tile_size=self.tile_size,
             max_region=max_region,
             limit=request.get("dataset_limit", 0),
             randomize=request.get("dataset_randomize", True),
@@ -101,8 +103,8 @@ class SegmentationNuclei(BasicTrainTask):
                 keys=("image", "label"),
                 label_key="label",
                 image_key="image",
-                num_samples=16,
-                spatial_size=self.roi_size,
+                num_samples=8,
+                spatial_size=(self.patch_size, self.patch_size),
             ),
         ]
 

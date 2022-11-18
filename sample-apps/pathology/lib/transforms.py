@@ -17,8 +17,10 @@ import numpy as np
 import openslide
 import torch
 from monai.apps.deepgrow.transforms import AddGuidanceSignald, AddInitialSeedPointd
+from monai.apps.nuclick.transforms import NuclickKeys
 from monai.apps.nuclick.transforms import PostFilterLabeld as NuClickPostFilterLabeld
 from monai.config import KeysCollection
+from monai.networks.layers import GaussianFilter
 from monai.transforms import MapTransform, Transform
 from PIL import Image
 from scipy.ndimage import binary_fill_holes
@@ -240,18 +242,59 @@ class AddClickGuidanceSignald(AddGuidanceSignald):
         return np.concatenate([image, ns, ns], axis=0)
 
 
-class FixMaskValued(MapTransform):
-    def __init__(self, keys: KeysCollection, allow_missing_keys: bool = False, source_key="label") -> None:
-        super().__init__(keys, allow_missing_keys)
-        self.source_key = source_key
+class SplitLabelExd(MapTransform):
+    def __init__(self, keys: KeysCollection, others: str = NuclickKeys.OTHERS):
+
+        super().__init__(keys, allow_missing_keys=False)
+        self.others = others
+
+    def __call__(self, data):
+        if len(self.keys) > 1:
+            logger.error("Only 'label' key is supported, more than 1 key was found")
+            return None
+
+        d = dict(data)
+        for key in self.keys:
+            label = d[key]
+            mask_value = int(torch.max(torch.where(torch.logical_and(label > 0, label < 255), label, 0)))
+            d[key] = (label == mask_value).type(torch.uint8)
+            d[self.others] = (label == 255).type(torch.uint8)
+        return d
+
+
+class ApplyGaussianFilter(MapTransform):
+    def __init__(self, keys: KeysCollection, spatial_dims=2, index: int = -1, sigma: int = 8, mask_to_point=True):
+
+        super().__init__(keys, allow_missing_keys=False)
+        self.spatial_dims = spatial_dims
+        self.index = index
+        self.sigma = sigma
+        self.mask_to_point = mask_to_point
+
+    def mask_to_random_point(self, mask):
+        point_mask = np.zeros_like(mask)
+        indices = np.argwhere(mask > 0)
+        if len(indices) > 0:
+            idx = np.random.randint(0, len(indices))
+            point_mask[indices[idx, 0], indices[idx, 1]] = 1
+
+        return point_mask
 
     def __call__(self, data):
         d = dict(data)
+        gaussian = GaussianFilter(spatial_dims=self.spatial_dims, sigma=self.sigma)
+
         for key in self.keys:
-            if d.get(key) is None:
-                label = d[self.source_key]
-                mask_value = int(torch.max(torch.where(torch.logical_and(label > 0, label < 255), label, 0)))
-                d[key] = mask_value
+            img = d[key]
+            signal_tensor = img if self.index < 0 else img[self.index]
+            signal_tensor = self.mask_to_random_point(signal_tensor) if self.mask_to_point else signal_tensor
+            signal_tensor = torch.tensor(signal_tensor)
+            signal_tensor = gaussian(signal_tensor)
+            if self.index < 0:
+                img = signal_tensor
+            else:
+                img[self.index] = signal_tensor
+            d[key] = img
         return d
 
 
@@ -263,14 +306,15 @@ class FixNuclickClassd(Transform):
 
     def __call__(self, data):
         d = dict(data)
-        signal = torch.where(torch.logical_and(d[self.label] > 0, d[self.label] < 255), 1, 0)
-        max_c = sorted([int(i) for i in torch.unique(d[self.label]) if i != 255])[-1]
+        label = d[self.label]
+        mask_value = int(torch.max(torch.where(torch.logical_and(label > 0, label < 255), label, 0)))
+        signal = (label == mask_value).type(torch.uint8)
 
         if len(signal.shape) < len(d[self.image].shape):
             signal = signal[None]
 
         d[self.image] = torch.cat([d[self.image], signal], dim=len(signal.shape) - 3)
-        d[self.label] = max_c + self.offset
+        d[self.label] = mask_value + self.offset
         return d
 
 

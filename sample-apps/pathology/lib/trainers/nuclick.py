@@ -16,9 +16,9 @@ import numpy as np
 import torch
 from ignite.metrics import Accuracy
 from lib.handlers import TensorBoardImageHandler
-from lib.transforms import FixMaskValued
+from lib.transforms import SplitLabelExd
 from lib.utils import split_dataset, split_nuclei_dataset
-from monai.apps.nuclick.transforms import AddPointGuidanceSignald, SplitLabeld
+from monai.apps.nuclick.transforms import AddPointGuidanceSignald
 from monai.handlers import from_engine
 from monai.inferers import SimpleInferer
 from monai.losses import DiceLoss
@@ -66,7 +66,7 @@ class NuClick(BasicTrainTask):
     def loss_function(self, context: Context):
         return DiceLoss(sigmoid=True, squared_pred=True)
 
-    def pre_process(self, request, datastore: Datastore):
+    def x_pre_process(self, request, datastore: Datastore):
         self.cleanup(request)
 
         cache_dir = os.path.join(self.get_cache_dir(request), "train_ds")
@@ -104,8 +104,7 @@ class NuClick(BasicTrainTask):
         return [
             LoadImaged(keys=("image", "label"), dtype=np.uint8),
             EnsureChannelFirstd(keys=("image", "label")),
-            FixMaskValued(keys="mask_value", source_key="label"),
-            SplitLabeld(keys="label", others="others", mask_value="mask_value", min_area=self.min_area),
+            SplitLabelExd(keys="label"),
             TorchVisiond(
                 keys="image", name="ColorJitter", brightness=64.0 / 255.0, contrast=0.75, saturation=0.25, hue=0.04
             ),
@@ -125,8 +124,7 @@ class NuClick(BasicTrainTask):
         return [
             LoadImaged(keys=("image", "label"), dtype=np.uint8),
             EnsureChannelFirstd(keys=("image", "label")),
-            FixMaskValued(keys="mask_value", source_key="label"),
-            SplitLabeld(keys="label", others="others", mask_value="mask_value", min_area=self.min_area),
+            SplitLabelExd(keys="label"),
             ScaleIntensityRangeD(keys="image", a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0),
             AddPointGuidanceSignald(image="image", label="label", others="others", drop_rate=1.0),
             SelectItemsd(keys=("image", "label")),
@@ -141,8 +139,14 @@ class NuClick(BasicTrainTask):
     def val_inferer(self, context: Context):
         return SimpleInferer()
 
+    def train_handlers(self, context: Context):
+        handlers = super().train_handlers(context)
+        if context.local_rank == 0:
+            handlers.append(TensorBoardImageHandler(log_dir=context.events_dir, batch_limit=4, tag_name="train"))
+        return handlers
+
     def val_handlers(self, context: Context):
         handlers = super().val_handlers(context)
         if context.local_rank == 0:
-            handlers.append(TensorBoardImageHandler(log_dir=context.events_dir, batch_limit=4))
+            handlers.append(TensorBoardImageHandler(log_dir=context.events_dir, batch_limit=4, tag_name="val"))
         return handlers
