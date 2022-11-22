@@ -29,7 +29,7 @@ weights/model (UNET).
 
 ### Dataset
 
-Above _Nuclei_ models are trained either on 
+Above _Nuclei_ models are trained either on
  - [PanNuke Dataset for Nuclei Instance Segmentation and Classification](https://warwick.ac.uk/fac/cross_fac/tia/data/pannuke)
  - [CoNSeP Dataset](https://warwick.ac.uk/fac/cross_fac/tia/data/hovernet)
 

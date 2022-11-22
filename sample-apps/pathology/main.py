@@ -214,8 +214,9 @@ def main():
         },
     )
 
-    train_from_dataset(app, "nuclick", "Nuclei")
+    # train_from_dataset(app, "nuclick", "Nuclei")
     # train(app, "classification_nuclei")
+    infer_nuclick(app, False)
 
 
 def train_from_dataset(app, model, postfix):
@@ -311,8 +312,22 @@ def infer_nuclick(app, classify=True):
         "output": "json" if classify else "asap",
     }
 
+    request = {
+        "model": "nuclick",
+        "image": "test_4",
+        "level": 0,
+        "location": [26, 285],
+        "size": [128, 128],
+        "tile_size": [128, 128],
+        "min_poly_area": 30,
+        "foreground": [[90, 349]],
+        "background": [],
+        "output": "json" if classify else "asap",
+        "result_dtype": "uint8",
+    }
+
     res = app.infer(request)
-    shutil.move(res["label"], os.path.join(app.studies, "..", "output_image.xml"))
+    shutil.move(res["label"], os.path.join(app.studies, "..", "output_image.png"))
     logger.info("All Done!")
 
 

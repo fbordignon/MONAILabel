@@ -14,12 +14,11 @@ import pathlib
 
 import numpy as np
 import openslide
+from monai.config import KeysCollection
+from monai.transforms import MapTransform
 from PIL import Image
 from scipy.ndimage import binary_fill_holes
 from skimage.morphology import remove_small_holes, remove_small_objects
-
-from monai.config import KeysCollection
-from monai.transforms import MapTransform
 
 logger = logging.getLogger(__name__)
 
@@ -70,9 +69,12 @@ class LoadImagePatchd(MapTransform):
                 img = slide.read_region(location, level, size)
             else:
                 img = Image.open(d[key])
+                d["location"] = [0, 0]
+                d["size"] = [0, 0]
 
             img = img.convert(self.mode) if self.mode else img
             image_np = np.array(img, dtype=self.dtype)
+            image_np = np.moveaxis(image_np, 0, 1)
 
             meta_dict_key = f"{key}_{self.meta_key_postfix}"
             meta_dict = d.get(meta_dict_key)
@@ -101,6 +103,7 @@ class LoadImagePatchd(MapTransform):
             constant_values=0,
         )
 
+
 class PostFilterLabeld(MapTransform):
     def __init__(self, keys: KeysCollection, min_size=64, min_hole=64):
         super().__init__(keys)
@@ -119,4 +122,3 @@ class PostFilterLabeld(MapTransform):
 
             d[key] = np.where(label > 0, d[key], 0)
         return d
-

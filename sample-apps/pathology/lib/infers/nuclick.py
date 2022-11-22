@@ -31,7 +31,7 @@ from monai.utils import ensure_tuple
 
 from monailabel.interfaces.tasks.infer_v2 import InferType
 from monailabel.tasks.infer.basic_infer import BasicInferTask
-from monailabel.transform.post import FindContoursd
+from monailabel.transform.post import DumpImagePrediction2Dd, FindContoursd
 from monailabel.transform.writer import PolygonWriter
 
 logger = logging.getLogger(__name__)
@@ -148,6 +148,10 @@ class NuClick(BasicInferTask):
             AsDiscreted(keys="pred", threshold=0.5),
             SqueezeDimd(keys="pred", dim=1),
             ToNumpyd(keys=("image", "pred")),
+            DumpImagePrediction2Dd(
+                image_path="/localhome/sachi/Dataset/Pathology/input.png",
+                pred_path="/localhome/sachi/Dataset/Pathology/output.png",
+            ),
             PostFilterLabeld(keys="pred"),
             FindContoursd(keys="pred", labels=self.labels),
         ]
