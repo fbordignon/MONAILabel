@@ -16,9 +16,8 @@ import numpy as np
 import torch
 from ignite.metrics import Accuracy
 from lib.handlers import TensorBoardImageHandler
-from lib.transforms import SplitLabelExd
 from lib.utils import split_dataset, split_nuclei_dataset
-from monai.apps.nuclick.transforms import AddPointGuidanceSignald
+from monai.apps.nuclick.transforms import AddPointGuidanceSignald, SplitLabeld
 from monai.handlers import from_engine
 from monai.inferers import SimpleInferer
 from monai.losses import DiceLoss
@@ -104,13 +103,13 @@ class NuClick(BasicTrainTask):
         return [
             LoadImaged(keys=("image", "label"), dtype=np.uint8),
             EnsureChannelFirstd(keys=("image", "label")),
-            SplitLabelExd(keys="label"),
+            SplitLabeld(keys="label", mask_value=None, others_value=255),
             TorchVisiond(
                 keys="image", name="ColorJitter", brightness=64.0 / 255.0, contrast=0.75, saturation=0.25, hue=0.04
             ),
             RandRotate90d(keys=("image", "label", "others"), prob=0.5, spatial_axes=(0, 1)),
             ScaleIntensityRangeD(keys="image", a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0),
-            AddPointGuidanceSignald(image="image", label="label", others="others"),
+            AddPointGuidanceSignald(image="image", label="label", others="others", gaussian=True),
             SelectItemsd(keys=("image", "label")),
         ]
 
@@ -124,9 +123,9 @@ class NuClick(BasicTrainTask):
         return [
             LoadImaged(keys=("image", "label"), dtype=np.uint8),
             EnsureChannelFirstd(keys=("image", "label")),
-            SplitLabelExd(keys="label"),
+            SplitLabeld(keys="label", mask_value=None, others_value=255),
             ScaleIntensityRangeD(keys="image", a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0),
-            AddPointGuidanceSignald(image="image", label="label", others="others", drop_rate=1.0),
+            AddPointGuidanceSignald(image="image", label="label", others="others", drop_rate=1.0, gaussian=True),
             SelectItemsd(keys=("image", "label")),
         ]
 

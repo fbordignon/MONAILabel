@@ -14,11 +14,10 @@ import os
 
 import numpy as np
 import torch
-from ignite.metrics import Accuracy
 from lib.handlers import TensorBoardImageHandler
-from lib.transforms import ApplyGaussianFilter, FixNuclickClassd
 from lib.utils import split_dataset, split_nuclei_dataset
-from monai.handlers import from_engine
+from monai.apps.nuclick.transforms import AddPointGuidanceSignald, FixNuclickClassd, SplitLabeld
+from monai.handlers import ConfusionMatrix, from_engine
 from monai.inferers import SimpleInferer
 from monai.transforms import (
     Activationsd,
@@ -30,6 +29,7 @@ from monai.transforms import (
     ScaleIntensityRangeD,
     SelectItemsd,
     TorchVisiond,
+    ToTensord,
 )
 from tqdm import tqdm
 
@@ -103,14 +103,15 @@ class ClassificationNuclei(BasicTrainTask):
         return [
             LoadImaged(keys=("image", "label"), dtype=np.uint8),
             EnsureChannelFirstd(keys=("image", "label")),
+            SplitLabeld(keys="label", mask_value=None, others_value=255, to_binary_mask=False),
             TorchVisiond(
                 keys="image", name="ColorJitter", brightness=64.0 / 255.0, contrast=0.75, saturation=0.25, hue=0.04
             ),
             RandFlipd(keys=("image", "label"), prob=0.5),
             RandRotate90d(keys=("image", "label"), prob=0.5, max_k=3, spatial_axes=(-2, -1)),
             ScaleIntensityRangeD(keys="image", a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0),
-            FixNuclickClassd(image="image", label="label", offset=-1),
-            ApplyGaussianFilter(keys="image", index=3),
+            AddPointGuidanceSignald(image="image", label="label", gaussian=True, add_exclusion_map=False),
+            FixNuclickClassd(keys="label", offset=-1),
             SelectItemsd(keys=("image", "label")),
         ]
 
@@ -118,23 +119,25 @@ class ClassificationNuclei(BasicTrainTask):
         return [
             Activationsd(keys="pred", softmax=True),
             AsDiscreted(keys=("pred", "label"), argmax=(True, False), to_onehot=len(self._labels)),
+            ToTensord(keys=("pred", "label"), device=context.device),
         ]
 
     def val_pre_transforms(self, context: Context):
         return [
             LoadImaged(keys=("image", "label"), dtype=np.uint8),
             EnsureChannelFirstd(keys=("image", "label")),
+            SplitLabeld(keys="label", mask_value=None, others_value=255),
             ScaleIntensityRangeD(keys="image", a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0),
-            FixNuclickClassd(image="image", label="label", offset=-1),
-            ApplyGaussianFilter(keys="image", index=3),
+            AddPointGuidanceSignald(image="image", label="label", gaussian=True, add_exclusion_map=False),
+            FixNuclickClassd(keys="label", offset=-1),
             SelectItemsd(keys=("image", "label")),
         ]
 
     def train_key_metric(self, context: Context):
-        return {"train_acc": Accuracy(output_transform=from_engine(["pred", "label"]))}
+        return {"train_f1": ConfusionMatrix(output_transform=from_engine(["pred", "label"]), metric_name="f1 score")}
 
     def val_key_metric(self, context: Context):
-        return {"val_acc": Accuracy(output_transform=from_engine(["pred", "label"]))}
+        return {"val_f1": ConfusionMatrix(output_transform=from_engine(["pred", "label"]), metric_name="f1 score")}
 
     def val_inferer(self, context: Context):
         return SimpleInferer()
