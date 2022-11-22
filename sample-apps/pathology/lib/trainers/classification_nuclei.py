@@ -16,7 +16,7 @@ import numpy as np
 import torch
 from lib.handlers import TensorBoardImageHandler
 from lib.utils import split_dataset, split_nuclei_dataset
-from monai.apps.nuclick.transforms import AddPointGuidanceSignald, FixNuclickClassd, SplitLabeld
+from monai.apps.nuclick.transforms import AddLabelAsGuidanced, SetLabelClassd, SplitLabeld
 from monai.handlers import ConfusionMatrix, from_engine
 from monai.inferers import SimpleInferer
 from monai.transforms import (
@@ -65,6 +65,7 @@ class ClassificationNuclei(BasicTrainTask):
     def loss_function(self, context: Context):
         return torch.nn.CrossEntropyLoss()
 
+    # TODO:: Enable back while merging to main
     def xpre_process(self, request, datastore: Datastore):
         self.cleanup(request)
 
@@ -110,8 +111,8 @@ class ClassificationNuclei(BasicTrainTask):
             RandFlipd(keys=("image", "label"), prob=0.5),
             RandRotate90d(keys=("image", "label"), prob=0.5, max_k=3, spatial_axes=(-2, -1)),
             ScaleIntensityRangeD(keys="image", a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0),
-            AddPointGuidanceSignald(image="image", label="label", gaussian=True, add_exclusion_map=False),
-            FixNuclickClassd(keys="label", offset=-1),
+            AddLabelAsGuidanced(keys="image", source="label"),
+            SetLabelClassd(keys="label", offset=-1),
             SelectItemsd(keys=("image", "label")),
         ]
 
@@ -126,10 +127,10 @@ class ClassificationNuclei(BasicTrainTask):
         return [
             LoadImaged(keys=("image", "label"), dtype=np.uint8),
             EnsureChannelFirstd(keys=("image", "label")),
-            SplitLabeld(keys="label", mask_value=None, others_value=255),
+            SplitLabeld(keys="label", mask_value=None, others_value=255, to_binary_mask=False),
             ScaleIntensityRangeD(keys="image", a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0),
-            AddPointGuidanceSignald(image="image", label="label", gaussian=True, add_exclusion_map=False),
-            FixNuclickClassd(keys="label", offset=-1),
+            AddLabelAsGuidanced(keys="image", source="label"),
+            SetLabelClassd(keys="label", offset=-1),
             SelectItemsd(keys=("image", "label")),
         ]
 
@@ -162,7 +163,7 @@ class ClassificationNuclei(BasicTrainTask):
                 TensorBoardImageHandler(
                     log_dir=context.events_dir,
                     class_names={str(v - 1): k for k, v in self._labels.items()},
-                    batch_limit=4,
+                    batch_limit=8,
                     tag_name="val",
                 )
             )

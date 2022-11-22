@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, Sequence
 
 import numpy as np
 from lib.transforms import LoadImagePatchd
-from monai.apps.nuclick.transforms import AddPointGuidanceSignald
+from monai.apps.nuclick.transforms import AddLabelAsGuidanced
 from monai.inferers import Inferer, SimpleInferer
 from monai.transforms import Activationsd, EnsureChannelFirstd, ScaleIntensityRangeD
 
@@ -65,7 +65,7 @@ class ClassificationNuclei(BasicInferTask):
             LoadImagePatchd(keys="label", dtype=np.uint8, mode="L"),
             EnsureChannelFirstd(keys=("image", "label")),
             ScaleIntensityRangeD(keys="image", a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0),
-            AddPointGuidanceSignald(image="image", label="label", gaussian=True, add_exclusion_map=False),
+            AddLabelAsGuidanced(keys="image", source="label"),
         ]
 
     def inferer(self, data=None) -> Inferer:

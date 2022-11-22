@@ -65,6 +65,7 @@ class NuClick(BasicTrainTask):
     def loss_function(self, context: Context):
         return DiceLoss(sigmoid=True, squared_pred=True)
 
+    # TODO:: Enable back while merging to main
     def x_pre_process(self, request, datastore: Datastore):
         self.cleanup(request)
 
@@ -109,7 +110,7 @@ class NuClick(BasicTrainTask):
             ),
             RandRotate90d(keys=("image", "label", "others"), prob=0.5, spatial_axes=(0, 1)),
             ScaleIntensityRangeD(keys="image", a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0),
-            AddPointGuidanceSignald(image="image", label="label", others="others", gaussian=True),
+            AddPointGuidanceSignald(image="image", label="label", others="others", use_distance=True, gaussian=True),
             SelectItemsd(keys=("image", "label")),
         ]
 
@@ -125,7 +126,9 @@ class NuClick(BasicTrainTask):
             EnsureChannelFirstd(keys=("image", "label")),
             SplitLabeld(keys="label", mask_value=None, others_value=255),
             ScaleIntensityRangeD(keys="image", a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0),
-            AddPointGuidanceSignald(image="image", label="label", others="others", drop_rate=1.0, gaussian=True),
+            AddPointGuidanceSignald(
+                image="image", label="label", others="others", use_distance=True, gaussian=True, drop_rate=1.0
+            ),
             SelectItemsd(keys=("image", "label")),
         ]
 

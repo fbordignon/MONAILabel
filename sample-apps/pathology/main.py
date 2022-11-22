@@ -199,8 +199,8 @@ def main():
     )
 
     home = str(Path.home())
-    # studies = f"{home}/Dataset/Pathology/CoNSeP/all_nuclei"
-    studies = f"{home}/Dataset/Pathology/dummy"
+    studies = f"{home}/Dataset/Pathology/CoNSeP/all_nuclei"
+    # studies = f"{home}/Dataset/Pathology/dummy"
 
     app_dir = os.path.dirname(__file__)
     app = MyApp(
@@ -214,9 +214,9 @@ def main():
         },
     )
 
-    # train_from_dataset(app, "nuclick", "Nuclei")
-    # train(app, "classification_nuclei")
-    infer_nuclick(app, False)
+    # train_from_dataset(app, "classification_nuclei", "Nuclei")
+    train(app, "classification_nuclei")
+    # infer_nuclick(app, False)
 
 
 def train_from_dataset(app, model, postfix):
@@ -271,7 +271,7 @@ def train(app, model):
         request={
             "name": "train_01",
             "model": model,
-            "max_epochs": 200,
+            "max_epochs": 100,
             "dataset": "CacheDataset",  # PersistentDataset, CacheDataset
             "train_batch_size": 64,
             "val_batch_size": 64,

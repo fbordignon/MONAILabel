@@ -15,7 +15,7 @@ from typing import Any, Callable, Dict, Sequence
 import numpy as np
 import torch
 from lib.transforms import LoadImagePatchd
-from monai.apps.nuclick.transforms import AddClickSignalsd, NuclickKeys, PostFilterLabeld
+from monai.apps.nuclick.transforms import AddClickSignalsd, AddLabelAsGuidanced, NuclickKeys, PostFilterLabeld
 from monai.config import KeysCollection
 from monai.transforms import (
     Activationsd,
@@ -114,6 +114,7 @@ class NuClick(BasicInferTask):
     def pre_transforms(self, data=None):
         return [
             LoadImagePatchd(keys="image", mode="RGB", dtype=np.uint8, padding=False),
+            EnsureTyped(keys="image", device=data.get("device") if data else None),
             AsChannelFirstd(keys="image"),
             ConvertInteractiveClickSignals(
                 source_annotation_keys="nuclick points",
@@ -122,14 +123,20 @@ class NuClick(BasicInferTask):
             ),
             ScaleIntensityRangeD(keys="image", a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0),
             AddClickSignalsd(image="image", foreground=NuclickKeys.FOREGROUND, gaussian=False),
-            EnsureTyped(keys="image", device=data.get("device") if data else None),
         ]
 
     def run_inferer(self, data, convert_to_batch=True, device="cuda"):
         output = super().run_inferer(data, False, device)
         if self.task_classification:
+            pred1 = output["pred"]
+            pred1 = torch.sigmoid(pred1)
+            pred1 = pred1 >= 0.5
+
             data2 = copy.deepcopy(self.task_classification.config())
-            data2.update({"image": output["image"][:, :4], "device": device})
+            data2.update({"image": output["image"][:, :3], "label": pred1, "device": device})
+            data2 = self.task_classification.run_pre_transforms(
+                data2, [AddLabelAsGuidanced(keys="image", source="label")]
+            )
 
             output2 = self.task_classification.run_inferer(data2, False, device)
             pred2 = output2["pred"]
