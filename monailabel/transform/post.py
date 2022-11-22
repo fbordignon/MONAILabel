@@ -19,7 +19,7 @@ import torch
 from monai.config import KeysCollection, NdarrayOrTensor
 from monai.data import MetaTensor
 from monai.transforms import MapTransform, Resize, Transform, generate_spatial_bounding_box, get_extreme_points
-from monai.utils import InterpolateMode, ensure_tuple_rep
+from monai.utils import InterpolateMode, convert_to_numpy, ensure_tuple_rep
 from shapely.geometry import Point, Polygon
 from torchvision.utils import make_grid, save_image
 
@@ -188,7 +188,7 @@ class FindContoursd(MapTransform):
             labels = [label for label in np.unique(p).tolist() if label > 0]
             logger.debug(f"Total Unique Masks (excluding background): {labels}")
             for label_idx in labels:
-                p = torch.Tensor.numpy(d[key]) if isinstance(d[key], torch.Tensor) else d[key]
+                p = convert_to_numpy(d[key]) if isinstance(d[key], torch.Tensor) else d[key]
                 p = np.where(p == label_idx, 1, 0).astype(np.uint8)
                 p = np.moveaxis(p, 0, 1)  # for cv2
 
