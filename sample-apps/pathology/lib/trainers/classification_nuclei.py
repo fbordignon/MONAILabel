@@ -26,9 +26,9 @@ from monai.transforms import (
     LoadImaged,
     RandFlipd,
     RandRotate90d,
+    RandTorchVisiond,
     ScaleIntensityRangeD,
     SelectItemsd,
-    TorchVisiond,
     ToTensord,
 )
 from tqdm import tqdm
@@ -105,8 +105,14 @@ class ClassificationNuclei(BasicTrainTask):
             LoadImaged(keys=("image", "label"), dtype=np.uint8),
             EnsureChannelFirstd(keys=("image", "label")),
             SplitLabeld(keys="label", mask_value=None, others_value=255, to_binary_mask=False),
-            TorchVisiond(
-                keys="image", name="ColorJitter", brightness=64.0 / 255.0, contrast=0.75, saturation=0.25, hue=0.04
+            RandTorchVisiond(
+                keys="image",
+                name="ColorJitter",
+                prob=0.5,
+                brightness=64.0 / 255.0,
+                contrast=0.75,
+                saturation=0.25,
+                hue=0.04,
             ),
             RandFlipd(keys=("image", "label"), prob=0.5),
             RandRotate90d(keys=("image", "label"), prob=0.5, max_k=3, spatial_axes=(-2, -1)),

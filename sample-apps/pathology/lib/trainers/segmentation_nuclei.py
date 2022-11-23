@@ -29,9 +29,9 @@ from monai.transforms import (
     RandCropByPosNegLabeld,
     RandFlipd,
     RandRotate90d,
+    RandTorchVisiond,
     ScaleIntensityRangeD,
     ScaleIntensityRanged,
-    TorchVisiond,
 )
 
 from monailabel.interfaces.datastore import Datastore
@@ -88,9 +88,10 @@ class SegmentationNuclei(BasicTrainTask):
             LoadImaged(keys=("image", "label"), dtype=np.uint8),
             EnsureTyped(keys=("image", "label")),
             EnsureChannelFirstd(keys=("image", "label")),
-            TorchVisiond(
+            RandTorchVisiond(
                 keys="image",
                 name="ColorJitter",
+                prob=0.5,
                 brightness=64.0 / 255.0,
                 contrast=0.75,
                 saturation=0.25,

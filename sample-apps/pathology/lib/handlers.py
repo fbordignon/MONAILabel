@@ -171,7 +171,10 @@ class TensorBoardImageHandler:
                     continue
 
                 tag_prefix = f"{self.tag_name} - b{bidx} - " if self.batch_limit != 1 else ""
-                img_tensor = make_grid(torch.from_numpy(image[:3] * 128 + 128), normalize=True)
+                img_np = image[:3] * 128 + 128
+                if image.shape[0] > 3:
+                    img_np[0, :, :] = np.where(image[3] > 0, 1, img_np[0, :, :])
+                img_tensor = make_grid(torch.from_numpy(img_np), normalize=True)
                 self.writer.add_image(tag=f"{tag_prefix}Image", img_tensor=img_tensor, global_step=epoch)
 
                 y_pred = output_data[bidx]["pred"].detach().cpu().numpy()

@@ -214,8 +214,8 @@ def main():
         },
     )
 
-    # train_from_dataset(app, "classification_nuclei", "Nuclei")
-    train(app, "classification_nuclei")
+    # train_from_dataset(app, "nuclick", "Nuclei")
+    train(app, "nuclick")
     # infer_nuclick(app, False)
 
 

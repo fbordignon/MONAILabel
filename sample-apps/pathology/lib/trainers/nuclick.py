@@ -26,10 +26,11 @@ from monai.transforms import (
     AsDiscreted,
     EnsureChannelFirstd,
     LoadImaged,
+    RandFlipd,
     RandRotate90d,
+    RandTorchVisiond,
     ScaleIntensityRangeD,
     SelectItemsd,
-    TorchVisiond,
 )
 from tqdm import tqdm
 
@@ -105,12 +106,19 @@ class NuClick(BasicTrainTask):
             LoadImaged(keys=("image", "label"), dtype=np.uint8),
             EnsureChannelFirstd(keys=("image", "label")),
             SplitLabeld(keys="label", mask_value=None, others_value=255),
-            TorchVisiond(
-                keys="image", name="ColorJitter", brightness=64.0 / 255.0, contrast=0.75, saturation=0.25, hue=0.04
+            RandTorchVisiond(
+                keys="image",
+                name="ColorJitter",
+                prob=0.5,
+                brightness=64.0 / 255.0,
+                contrast=0.75,
+                saturation=0.25,
+                hue=0.04,
             ),
+            RandFlipd(keys=("image", "label", "others"), prob=0.5),
             RandRotate90d(keys=("image", "label", "others"), prob=0.5, spatial_axes=(0, 1)),
             ScaleIntensityRangeD(keys="image", a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0),
-            AddPointGuidanceSignald(image="image", label="label", others="others", use_distance=True, gaussian=True),
+            AddPointGuidanceSignald(image="image", label="label", others="others", use_distance=True, gaussian=False),
             SelectItemsd(keys=("image", "label")),
         ]
 
@@ -127,7 +135,12 @@ class NuClick(BasicTrainTask):
             SplitLabeld(keys="label", mask_value=None, others_value=255),
             ScaleIntensityRangeD(keys="image", a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0),
             AddPointGuidanceSignald(
-                image="image", label="label", others="others", use_distance=True, gaussian=True, drop_rate=1.0
+                image="image",
+                label="label",
+                others="others",
+                use_distance=True,
+                gaussian=False,
+                drop_rate=1.0,
             ),
             SelectItemsd(keys=("image", "label")),
         ]
@@ -150,5 +163,5 @@ class NuClick(BasicTrainTask):
     def val_handlers(self, context: Context):
         handlers = super().val_handlers(context)
         if context.local_rank == 0:
-            handlers.append(TensorBoardImageHandler(log_dir=context.events_dir, batch_limit=4, tag_name="val"))
+            handlers.append(TensorBoardImageHandler(log_dir=context.events_dir, batch_limit=8, tag_name="val"))
         return handlers
