@@ -33,6 +33,8 @@ Above _Nuclei_ models are trained either on
  - [PanNuke Dataset for Nuclei Instance Segmentation and Classification](https://warwick.ac.uk/fac/cross_fac/tia/data/pannuke)
  - [CoNSeP Dataset](https://warwick.ac.uk/fac/cross_fac/tia/data/hovernet)
 
+Pass `--conf consep true` option while starting MONAILabel server to use models trained on CoNSeP Dataset
+
 ### Inputs
 
 - WSI Images
