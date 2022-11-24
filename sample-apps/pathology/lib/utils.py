@@ -661,20 +661,22 @@ def main_nuclei():
         logger.info(f"Generate Nuclei Dataset for: {studies}")
         datastore = LocalDatastore(studies, extensions=("*.png", "*.mat"))
 
-        nuclick = True
+        nuclick = False
         if not nuclick:
-            output_dir = f"{home}/Dataset/Pathology/CoNSeP/{f}Seg"
-            split_dataset(datastore, output_dir, "consep", None, None, limit=0)
+            output_dir = f"{home}/Dataset/Pathology/CoNSeP/{f}Segx256All"
+            crop_size = 256  # if f == "training" else 0
+            split_dataset(datastore, output_dir, "consep", None, None, limit=0, crop_size=crop_size)
 
-            class_count = {1: 0, 2: 0, 3: 0, 4: 0}
-            ds = datastore.datalist()
-            for d in ds:
-                m = scipy.io.loadmat(d["label"])
-                for class_id in m["inst_type"]:
-                    class_id = int(class_id)
-                    class_id = 3 if class_id in (3, 4) else 4 if class_id in (5, 6, 7) else class_id  # override
-                    class_count[class_id] = class_count.get(class_id, 0) + 1
-            logger.info(f"{f} => Label Classes: {class_count}")
+            if not crop_size:
+                class_count = {1: 0, 2: 0, 3: 0, 4: 0}
+                ds = datastore.datalist()
+                for d in ds:
+                    m = scipy.io.loadmat(d["label"])
+                    for class_id in m["inst_type"]:
+                        class_id = int(class_id)
+                        class_id = 3 if class_id in (3, 4) else 4 if class_id in (5, 6, 7) else class_id  # override
+                        class_count[class_id] = class_count.get(class_id, 0) + 1
+                logger.info(f"{f} => Label Classes: {class_count}")
         else:
             output_dir = f"{home}/Dataset/Pathology/CoNSeP/{f}Class"
             split_dataset(datastore, output_dir, "consep_nuclei", None, None, limit=0, crop_size=96)

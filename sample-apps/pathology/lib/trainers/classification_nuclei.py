@@ -65,8 +65,7 @@ class ClassificationNuclei(BasicTrainTask):
     def loss_function(self, context: Context):
         return torch.nn.CrossEntropyLoss()
 
-    # TODO:: Enable back while merging to main
-    def xpre_process(self, request, datastore: Datastore):
+    def pre_process(self, request, datastore: Datastore):
         self.cleanup(request)
 
         cache_dir = os.path.join(self.get_cache_dir(request), "train_ds")
@@ -87,14 +86,9 @@ class ClassificationNuclei(BasicTrainTask):
         logger.info(f"Split data (len: {len(ds)}) based on each nuclei")
 
         limit = request.get("dataset_limit", 0)
-        if source == "consep_nuclick":
-            return ds[:limit] if 0 < limit < len(ds) else ds
-
         ds_new = []
         for d in tqdm(ds):
-            ds_new.extend(
-                split_nuclei_dataset(d, os.path.join(cache_dir, "nuclei_flattened"), crop_size=self.patch_size)
-            )
+            ds_new.extend(split_nuclei_dataset(d, os.path.join(cache_dir, "nuclei_flattened")))
             if 0 < limit < len(ds_new):
                 ds_new = ds_new[:limit]
                 break

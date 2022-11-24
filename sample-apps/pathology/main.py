@@ -199,7 +199,8 @@ def main():
     )
 
     home = str(Path.home())
-    studies = f"{home}/Dataset/Pathology/CoNSeP/all_nuclei"
+    studies = f"{home}/Dataset/Pathology/CoNSeP/all_seg"
+    # studies = f"{home}/Dataset/Pathology/CoNSeP/all_nuclei"
     # studies = f"{home}/Dataset/Pathology/dummy"
 
     app_dir = os.path.dirname(__file__)
@@ -214,8 +215,8 @@ def main():
         },
     )
 
-    # train_from_dataset(app, "nuclick", "Nuclei")
-    train(app, "nuclick")
+    # train_from_dataset(app, "segmentation_nuclei", "Segx256")
+    train(app, "segmentation_nuclei")
     # infer_nuclick(app, False)
 
 
@@ -235,8 +236,8 @@ def train_from_dataset(app, model, postfix):
     random.shuffle(train_ds)
     random.shuffle(val_ds)
 
-    train_ds = train_ds[:256]
-    val_ds = val_ds[:64]
+    # train_ds = train_ds[:256]
+    # val_ds = val_ds[:64]
 
     train_ds_json = f"{home}/Dataset/Pathology/CoNSeP/train_ds.json"
     val_ds_json = f"{home}/Dataset/Pathology/CoNSeP/val_ds.json"
@@ -250,10 +251,10 @@ def train_from_dataset(app, model, postfix):
         request={
             "name": "train_01",
             "model": model,
-            "max_epochs": 10,
+            "max_epochs": 50,
             "dataset": "CacheDataset",  # PersistentDataset, CacheDataset
-            "train_batch_size": 64,
-            "val_batch_size": 64,
+            "train_batch_size": 32,
+            "val_batch_size": 16,
             "multi_gpu": False,
             "val_split": 0.2,
             "dataset_source": "none",
@@ -273,8 +274,8 @@ def train(app, model):
             "model": model,
             "max_epochs": 100,
             "dataset": "CacheDataset",  # PersistentDataset, CacheDataset
-            "train_batch_size": 64,
-            "val_batch_size": 64,
+            "train_batch_size": 128,
+            "val_batch_size": 128,
             "multi_gpu": True,
             "val_split": 0.2,
             "dataset_limit": 0,

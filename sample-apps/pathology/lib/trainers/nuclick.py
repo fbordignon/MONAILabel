@@ -91,9 +91,6 @@ class NuClick(BasicTrainTask):
         logger.info(f"Split data (len: {len(ds)}) based on each nuclei")
         ds_new = []
         limit = request.get("dataset_limit", 0)
-        if source == "consep_nuclick":
-            return ds[:limit] if 0 < limit < len(ds) else ds
-
         for d in tqdm(ds):
             ds_new.extend(split_nuclei_dataset(d, os.path.join(cache_dir, "nuclei_flattened")))
             if 0 < limit < len(ds_new):

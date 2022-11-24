@@ -113,9 +113,8 @@ class SegmentationNuclei(TaskConfig):
             description="Train Nuclei Segmentation Model",
             config={
                 "max_epochs": 10,
-                "train_batch_size": 1,
+                "train_batch_size": 16,
                 "val_batch_size": 16,
             },
-            # val_interval=10,
         )
         return task

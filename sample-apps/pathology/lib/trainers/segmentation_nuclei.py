@@ -18,15 +18,14 @@ from ignite.metrics import Accuracy
 from lib.handlers import TensorBoardImageHandler
 from lib.utils import split_dataset
 from monai.handlers import from_engine
-from monai.inferers import SlidingWindowInferer
-from monai.losses import DiceLoss
+from monai.inferers import SimpleInferer
+from monai.losses import DiceCELoss
 from monai.transforms import (
     Activationsd,
     AsDiscreted,
     EnsureChannelFirstd,
     EnsureTyped,
     LoadImaged,
-    RandCropByPosNegLabeld,
     RandFlipd,
     RandRotate90d,
     RandTorchVisiond,
@@ -59,10 +58,10 @@ class SegmentationNuclei(BasicTrainTask):
         return self._network
 
     def optimizer(self, context: Context):
-        return torch.optim.Adam(context.network.parameters(), 0.0002)
+        return torch.optim.Adam(context.network.parameters(), 0.0001)
 
     def loss_function(self, context: Context):
-        return DiceLoss(to_onehot_y=True, softmax=True, squared_pred=True)
+        return DiceCELoss(to_onehot_y=True, softmax=True)
 
     def pre_process(self, request, datastore: Datastore):
         self.cleanup(request)
@@ -81,6 +80,7 @@ class SegmentationNuclei(BasicTrainTask):
             max_region=max_region,
             limit=request.get("dataset_limit", 0),
             randomize=request.get("dataset_randomize", True),
+            crop_size=self.patch_size,
         )
 
     def train_pre_transforms(self, context: Context):
@@ -98,15 +98,8 @@ class SegmentationNuclei(BasicTrainTask):
                 hue=0.04,
             ),
             RandFlipd(keys=("image", "label"), prob=0.5),
-            RandRotate90d(keys=("image", "label"), prob=0.5, max_k=3, spatial_axes=(-2, -1)),
+            RandRotate90d(keys=("image", "label"), prob=0.5, max_k=3, spatial_axes=(0, 1)),
             ScaleIntensityRanged(keys="image", a_min=0.0, a_max=255.0, b_min=-1.0, b_max=1.0),
-            RandCropByPosNegLabeld(
-                keys=("image", "label"),
-                label_key="label",
-                image_key="image",
-                num_samples=8,
-                spatial_size=(self.patch_size, self.patch_size),
-            ),
         ]
 
     def train_post_transforms(self, context: Context):
@@ -131,7 +124,7 @@ class SegmentationNuclei(BasicTrainTask):
         return {"val_acc": Accuracy(output_transform=from_engine(["pred", "label"]))}
 
     def val_inferer(self, context: Context):
-        return SlidingWindowInferer(roi_size=(1024, 1024))
+        return SimpleInferer()
 
     def train_handlers(self, context: Context):
         handlers = super().train_handlers(context)
@@ -142,5 +135,5 @@ class SegmentationNuclei(BasicTrainTask):
     def val_handlers(self, context: Context):
         handlers = super().val_handlers(context)
         if context.local_rank == 0:
-            handlers.append(TensorBoardImageHandler(log_dir=context.events_dir, batch_limit=4, tag_name="val"))
+            handlers.append(TensorBoardImageHandler(log_dir=context.events_dir, batch_limit=8, tag_name="val"))
         return handlers
