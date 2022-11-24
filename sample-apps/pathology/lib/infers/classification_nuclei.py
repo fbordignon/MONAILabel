@@ -13,8 +13,8 @@ import logging
 from typing import Any, Callable, Dict, Sequence
 
 import numpy as np
+from lib.nuclick import AddLabelAsGuidanced
 from lib.transforms import LoadImagePatchd
-from monai.apps.nuclick.transforms import AddLabelAsGuidanced
 from monai.inferers import Inferer, SimpleInferer
 from monai.transforms import Activationsd, EnsureChannelFirstd, ScaleIntensityRangeD
 

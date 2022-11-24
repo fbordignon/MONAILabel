@@ -91,7 +91,7 @@ class SegmentationNuclei(BasicTrainTask):
             RandTorchVisiond(
                 keys="image",
                 name="ColorJitter",
-                prob=0.5,
+                # prob=0.5,
                 brightness=64.0 / 255.0,
                 contrast=0.75,
                 saturation=0.25,

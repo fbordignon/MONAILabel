@@ -15,8 +15,8 @@ import os
 import numpy as np
 import torch
 from lib.handlers import TensorBoardImageHandler
+from lib.nuclick import AddLabelAsGuidanced, SetLabelClassd, SplitLabeld
 from lib.utils import split_dataset, split_nuclei_dataset
-from monai.apps.nuclick.transforms import AddLabelAsGuidanced, SetLabelClassd, SplitLabeld
 from monai.handlers import ConfusionMatrix, from_engine
 from monai.inferers import SimpleInferer
 from monai.transforms import (
@@ -92,6 +92,7 @@ class ClassificationNuclei(BasicTrainTask):
             if 0 < limit < len(ds_new):
                 ds_new = ds_new[:limit]
                 break
+        logger.info(f"Final Records with nuclei split: {len(ds_new)}")
         return ds_new
 
     def train_pre_transforms(self, context: Context):
@@ -102,7 +103,7 @@ class ClassificationNuclei(BasicTrainTask):
             RandTorchVisiond(
                 keys="image",
                 name="ColorJitter",
-                prob=0.5,
+                # prob=0.5,
                 brightness=64.0 / 255.0,
                 contrast=0.75,
                 saturation=0.25,

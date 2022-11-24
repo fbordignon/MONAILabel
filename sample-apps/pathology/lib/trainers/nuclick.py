@@ -16,8 +16,8 @@ import numpy as np
 import torch
 from ignite.metrics import Accuracy
 from lib.handlers import TensorBoardImageHandler
+from lib.nuclick import AddPointGuidanceSignald, SplitLabeld
 from lib.utils import split_dataset, split_nuclei_dataset
-from monai.apps.nuclick.transforms import AddPointGuidanceSignald, SplitLabeld
 from monai.handlers import from_engine
 from monai.inferers import SimpleInferer
 from monai.losses import DiceLoss
@@ -66,8 +66,7 @@ class NuClick(BasicTrainTask):
     def loss_function(self, context: Context):
         return DiceLoss(sigmoid=True, squared_pred=True)
 
-    # TODO:: Enable back while merging to main
-    def x_pre_process(self, request, datastore: Datastore):
+    def pre_process(self, request, datastore: Datastore):
         self.cleanup(request)
 
         cache_dir = os.path.join(self.get_cache_dir(request), "train_ds")
@@ -96,6 +95,7 @@ class NuClick(BasicTrainTask):
             if 0 < limit < len(ds_new):
                 ds_new = ds_new[:limit]
                 break
+        logger.info(f"Final Records with nuclei split: {len(ds_new)}")
         return ds_new
 
     def train_pre_transforms(self, context: Context):
@@ -106,7 +106,7 @@ class NuClick(BasicTrainTask):
             RandTorchVisiond(
                 keys="image",
                 name="ColorJitter",
-                prob=0.5,
+                # prob=0.5,
                 brightness=64.0 / 255.0,
                 contrast=0.75,
                 saturation=0.25,

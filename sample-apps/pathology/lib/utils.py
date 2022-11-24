@@ -478,10 +478,12 @@ def split_nuclei_dataset(
     mask_np = np.array(mask)
 
     numLabels, instances, stats, centroids = cv2.connectedComponentsWithStats(mask_np, 4, cv2.CV_32S)
-    # logger.info(f"Total Labels: {numLabels}")
-    # logger.info(f"Total Instances: {np.unique(instances)}")
-    # logger.info(f"Total Stats: {len(stats)}")
-    # logger.info(f"Total Centroids: {len(centroids)}")
+    logger.info("-------------------------------------------------------------------------------")
+    logger.info(f"Image/Label ========> {d['image']} =====> {d['label']}")
+    logger.info(f"Total Labels: {numLabels}")
+    logger.info(f"Total Instances: {np.unique(instances)}")
+    logger.info(f"Total Stats: {len(stats)}")
+    logger.info(f"Total Centroids: {len(centroids)}")
 
     for nuclei_id, (x, y) in enumerate(centroids):
         if nuclei_id == 0:
@@ -517,7 +519,7 @@ def split_nuclei_dataset(
             ignored += 1
 
     if ignored:
-        logger.debug(f"Total Ignored => {d['label']} => {ignored}/{len(stats)}")
+        logger.info(f"Total Ignored => {ignored}/{len(stats)}")
     return dataset_json
 
 
