@@ -4,6 +4,8 @@ set(MODULE_NAME MONAITransforms)
 #-----------------------------------------------------------------------------
 set(MODULE_PYTHON_SCRIPTS
   ${MODULE_NAME}.py
+  ${MODULE_NAME}Lib/__init__.py
+  ${MODULE_NAME}Lib/utils.py
   )
 
 set(MODULE_PYTHON_RESOURCES
