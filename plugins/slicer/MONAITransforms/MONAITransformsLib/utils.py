@@ -10,6 +10,7 @@
 # limitations under the License.
 
 import inspect
+import os
 
 
 def is_subclass(n, o, base_c):
@@ -76,6 +77,33 @@ class MonaiUtils:
 
         return get_all_bundles_list()
 
+    @staticmethod
+    def download_bundle(name, bundle_dir):
+        from monai.bundle import download
+
+        download(name, bundle_dir=bundle_dir)
+
+    @staticmethod
+    def transforms_from_bundle(name, bundle_dir):
+        from monai.bundle import ConfigParser
+
+        bundle_root = os.path.join(bundle_dir, name)
+        config_path = os.path.join(bundle_root, "configs", "train.json")
+        if not os.path.exists(config_path):
+            config_path = os.path.join(bundle_root, "configs", "train.yaml")
+
+        bundle_config = ConfigParser()
+        bundle_config.read_config(config_path)
+        bundle_config.config.update({"bundle_root": bundle_root})  # type: ignore
+
+        for k in ["train#preprocessing#transforms", "train#pre_transforms#transforms"]:
+            if bundle_config.get(k):
+                c = bundle_config.get_parsed_content(k, instantiate=False)
+                c = [x.get_config() for x in c]
+                return c
+
+        return None
+
 
 def main():
     transforms = MonaiUtils.list_transforms()
@@ -100,6 +128,15 @@ def main():
     bundles = MonaiUtils.list_bundles()
     for b in sorted({b[0] for b in bundles}):
         print(b)
+
+    print("")
+    print("Bundle Transforms....")
+    print("----------------------------------------------------------------")
+    b_transforms = MonaiUtils.transforms_from_bundle(
+        "spleen_ct_segmentation", "/tmp/Slicer-sachi/slicer-monai-transforms2023-02-01_18+24+52.939/bundle"
+    )
+    for t in b_transforms:
+        print(f"{type(t)} => {t}")
 
 
 if __name__ == "__main__":

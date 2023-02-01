@@ -38,7 +38,23 @@
           </size>
          </property>
          <property name="text">
-          <string>+</string>
+          <string/>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="editTransformButton">
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>48</width>
+           <height>16777215</height>
+          </size>
+         </property>
+         <property name="text">
+          <string/>
          </property>
         </widget>
        </item>
@@ -54,7 +70,7 @@
           </size>
          </property>
          <property name="text">
-          <string>−</string>
+          <string/>
          </property>
         </widget>
        </item>
@@ -228,12 +244,29 @@
    <item>
     <widget class="QLabel" name="label_2">
      <property name="text">
-      <string>Label/Mask:</string>
+      <string>Label:</string>
      </property>
     </widget>
    </item>
    <item>
     <widget class="ctkPathLineEdit" name="PathLineEdit_2"/>
+   </item>
+   <item>
+    <widget class="QLabel" name="label_4">
+     <property name="text">
+      <string>Additional Input:</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTextEdit" name="textEdit">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+    </widget>
    </item>
    <item>
     <widget class="Line" name="line">

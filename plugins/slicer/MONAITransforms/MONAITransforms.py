@@ -8,7 +8,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import copy
+import json
 import logging
 import os
 
@@ -107,6 +108,7 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self._parameterNode = None
         self._updatingGUIFromParameterNode = False
         self.transforms = None
+        self.tmpdir = slicer.util.tempDirectory("slicer-monai-transforms")
 
     def setup(self):
         ScriptedLoadableModuleWidget.setup(self)
@@ -129,16 +131,23 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.moveDownButton.connect("clicked(bool)", self.onMoveDownTransform)
         self.ui.modulesComboBox.connect("currentIndexChanged(int)", self.onSelectModule)
         self.ui.transformTable.connect("cellClicked(int, int)", self.onSelectTransform)
+        self.ui.transformTable.connect("cellDoubleClicked(int, int)", self.onEditTransform)
+        self.ui.importBundleButton.connect("clicked(bool)", self.onImportBundle)
 
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
 
         self.ui.importBundleButton.setIcon(self.icon("download.png"))
+        self.ui.addTransformButton.setIcon(self.icon("icons8-insert-row-48.png"))
+        self.ui.removeTransformButton.setIcon(self.icon("icons8-delete-row-48.png"))
+        self.ui.editTransformButton.setIcon(self.icon("icons8-edit-row-48.png"))
 
-        headers = ["Name"]
+        headers = ["Target", "Init Keys"]
         self.ui.transformTable.setColumnCount(len(headers))
         self.ui.transformTable.setHorizontalHeaderLabels(headers)
-        # self.ui.transformTable.setColumnWidth(0, 250)
+        self.ui.transformTable.setColumnWidth(0, 200)
+        self.ui.transformTable.setEditTriggers(qt.QTableWidget.NoEditTriggers)
+        self.ui.transformTable.setSelectionBehavior(qt.QTableView.SelectRows)
 
         self.refreshVersion()
 
@@ -228,6 +237,8 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         bundles = MonaiUtils.list_bundles()
         self.ui.bundlesComboBox.clear()
         self.ui.bundlesComboBox.addItems(list(sorted({b[0] for b in bundles})))
+        idx = max(0, self.ui.bundlesComboBox.findText("spleen_ct_segmentation"))
+        self.ui.bundlesComboBox.setCurrentIndex(idx)
 
         self.ui.bundleStageComboBox.clear()
         self.ui.bundleStageComboBox.addItems(["pre", "post"])
@@ -246,6 +257,33 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.modulesComboBox.setCurrentIndex(idx)
         # self.onSelectModule(self.ui.modulesComboBox.currentText)
 
+    def onImportBundle(self):
+        if not self.ui.monaiVersionComboBox.currentText:
+            return
+        name = self.ui.bundlesComboBox.currentText
+        bundle_dir = os.path.join(self.tmpdir, "bundle")
+        this_bundle = os.path.join(bundle_dir, name)
+        if not os.path.exists(this_bundle):
+            print(f"Downloading {name} to {bundle_dir}")
+            MonaiUtils.download_bundle(name, bundle_dir)
+
+        transforms = MonaiUtils.transforms_from_bundle(name, bundle_dir)
+
+        table = self.ui.transformTable
+        table.clearContents()
+        table.setRowCount(len(transforms))
+
+        pos = 0
+        for t in transforms:
+            name = t["_target_"]
+            args = copy.copy(t)
+            args.pop("_target_")
+
+            print(f"Importing Transform: {name} => {args}")
+            table.setItem(pos, 0, qt.QTableWidgetItem(name))
+            table.setItem(pos, 1, qt.QTableWidgetItem(json.dumps(args)))
+            pos += 1
+
     def onSelectModule(self):
         module = self.ui.modulesComboBox.currentText
         print(f"Selected Module: {module}")
@@ -257,9 +295,13 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def onSelectTransform(self, row, col):
         selected = True if row >= 0 and self.ui.transformTable.rowCount else False
+        self.ui.editTransformButton.setEnabled(selected)
         self.ui.removeTransformButton.setEnabled(selected)
         self.ui.moveUpButton.setEnabled(selected and row > 0)
         self.ui.moveDownButton.setEnabled(selected and row < self.ui.transformTable.rowCount - 1)
+
+    def onEditTransform(self, row, col):
+        print(f"Selected Transform for Edit: {row}")
 
     def onAddTransform(self):
         print(f"Adding Transform: {self.ui.modulesComboBox.currentText}.{self.ui.transformsComboBox.currentText}")
@@ -270,7 +312,7 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         m = self.ui.modulesComboBox.currentText
 
         table = self.ui.transformTable
-        pos = table.rowCount
+        pos = table.rowCount if table.currentRow() < 0 else table.currentRow()
         table.insertRow(pos)
 
         table.setItem(pos, 0, qt.QTableWidgetItem(f"{m}.{t}"))
@@ -287,6 +329,10 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def onMoveDownTransform(self):
         pass
+
+    def onApply(self):
+        image = "/localhome/sachi/Datasets/Radiology/Task09_Spleen/imagesTr/spleen_2.nii.gz"
+        label = "/localhome/sachi/Datasets/Radiology/Task09_Spleen/labelsTr/spleen_2.nii.gz"
 
 
 class MONAITransformsLogic(ScriptedLoadableModuleLogic):
