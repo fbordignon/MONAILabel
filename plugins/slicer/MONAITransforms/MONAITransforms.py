@@ -106,6 +106,7 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.logic = None
         self._parameterNode = None
         self._updatingGUIFromParameterNode = False
+        self.transforms = None
 
     def setup(self):
         ScriptedLoadableModuleWidget.setup(self)
@@ -122,9 +123,22 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose)
 
         self.ui.applyButton.connect("clicked(bool)", self.onApplyButton)
+        self.ui.addTransformButton.connect("clicked(bool)", self.onAddTransform)
+        self.ui.removeTransformButton.connect("clicked(bool)", self.onRemoveTransform)
+        self.ui.moveUpButton.connect("clicked(bool)", self.onMoveUpTransform)
+        self.ui.moveDownButton.connect("clicked(bool)", self.onMoveDownTransform)
+        self.ui.modulesComboBox.connect("currentIndexChanged(int)", self.onSelectModule)
+        self.ui.transformTable.connect("cellClicked(int, int)", self.onSelectTransform)
 
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
+
+        self.ui.importBundleButton.setIcon(self.icon("download.png"))
+
+        headers = ["Name"]
+        self.ui.transformTable.setColumnCount(len(headers))
+        self.ui.transformTable.setHorizontalHeaderLabels(headers)
+        # self.ui.transformTable.setColumnWidth(0, 250)
 
         self.refreshVersion()
 
@@ -154,11 +168,6 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 self._parameterNode.SetNodeReferenceID("InputVolume", firstVolumeNode.GetID())
 
     def setParameterNode(self, inputParameterNode):
-        """
-        Set and observe parameter node.
-        Observation is needed because when the parameter node is changed then the GUI must be updated immediately.
-        """
-
         if inputParameterNode:
             self.logic.setDefaultParameters(inputParameterNode)
 
@@ -215,25 +224,69 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         self.refreshTransforms()
 
+        # bundle names
+        bundles = MonaiUtils.list_bundles()
+        self.ui.bundlesComboBox.clear()
+        self.ui.bundlesComboBox.addItems(list(sorted({b[0] for b in bundles})))
+
+        self.ui.bundleStageComboBox.clear()
+        self.ui.bundleStageComboBox.addItems(["pre", "post"])
+
     def refreshTransforms(self):
         if not self.ui.monaiVersionComboBox.currentText:
             return
 
         print("Refreshing Transforms...")
-        self.ui.transformsComboBox.clear()
-
-        transforms = MonaiUtils.list_transforms()
-        categories = list({v["category"] for v in transforms.values()})
-
-        category = "monai.transforms.io"
+        self.transforms = MonaiUtils.list_transforms()
 
         self.ui.modulesComboBox.clear()
-        self.ui.modulesComboBox.addItems(categories)
-        self.ui.modulesComboBox.setCurrentIndex(self.ui.modulesComboBox.findText(category))
-        category = self.ui.modulesComboBox.currentText
+        self.ui.modulesComboBox.addItems(sorted(list({v["module"] for v in self.transforms.values()})))
 
-        filtered = [k for k, v in transforms.items() if v["category"] == category and v["dictionary"] is False]
+        idx = max(0, self.ui.modulesComboBox.findText("monai.transforms.io.dictionary"))
+        self.ui.modulesComboBox.setCurrentIndex(idx)
+        # self.onSelectModule(self.ui.modulesComboBox.currentText)
+
+    def onSelectModule(self):
+        module = self.ui.modulesComboBox.currentText
+        print(f"Selected Module: {module}")
+
+        filtered = [k for k, v in self.transforms.items() if v["module"] == module]
+        filtered = [f.replace(f"{module}.", "") for f in filtered]
+        self.ui.transformsComboBox.clear()
         self.ui.transformsComboBox.addItems(filtered)
+
+    def onSelectTransform(self, row, col):
+        selected = True if row >= 0 and self.ui.transformTable.rowCount else False
+        self.ui.removeTransformButton.setEnabled(selected)
+        self.ui.moveUpButton.setEnabled(selected and row > 0)
+        self.ui.moveDownButton.setEnabled(selected and row < self.ui.transformTable.rowCount - 1)
+
+    def onAddTransform(self):
+        print(f"Adding Transform: {self.ui.modulesComboBox.currentText}.{self.ui.transformsComboBox.currentText}")
+        if not self.ui.modulesComboBox.currentText or not self.ui.transformsComboBox.currentText:
+            return
+
+        t = self.ui.transformsComboBox.currentText
+        m = self.ui.modulesComboBox.currentText
+
+        table = self.ui.transformTable
+        pos = table.rowCount
+        table.insertRow(pos)
+
+        table.setItem(pos, 0, qt.QTableWidgetItem(f"{m}.{t}"))
+
+    def onRemoveTransform(self):
+        row = self.ui.transformTable.currentRow()
+        if row < 0:
+            return
+        self.ui.transformTable.removeRow(row)
+        self.onSelectTransform(-1, -1)
+
+    def onMoveUpTransform(self):
+        pass
+
+    def onMoveDownTransform(self):
+        pass
 
 
 class MONAITransformsLogic(ScriptedLoadableModuleLogic):

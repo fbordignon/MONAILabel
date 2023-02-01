@@ -10,7 +10,6 @@
 # limitations under the License.
 
 import inspect
-import json
 
 
 def is_subclass(n, o, base_c):
@@ -71,16 +70,36 @@ class MonaiUtils:
 
         return get_class_of_subclass(mt, ["Transform", "MapTransform"])
 
+    @staticmethod
+    def list_bundles():
+        from monai.bundle import get_all_bundles_list
+
+        return get_all_bundles_list()
+
 
 def main():
-    mutil = MonaiUtils()
-    transforms = mutil.list_transforms()
+    transforms = MonaiUtils.list_transforms()
 
+    print("ALL Transforms....")
+    print("----------------------------------------------------------------")
     for t in transforms:
-        print(f"{t} => {transforms[t]['category']}")
+        print(f"{t} => {transforms[t]['module']}")
 
-    categories = list({v["category"] for v in transforms.values()})
-    print(json.dumps(categories, indent=2))
+    modules = sorted(list({v["module"] for v in transforms.values()}))
+
+    print("")
+    print("ALL Modules....")
+    print("----------------------------------------------------------------")
+    for m in modules:
+        print(f"{m}")
+    # print(json.dumps(categories, indent=2))
+
+    print("")
+    print("ALL Bundles....")
+    print("----------------------------------------------------------------")
+    bundles = MonaiUtils.list_bundles()
+    for b in sorted({b[0] for b in bundles}):
+        print(b)
 
 
 if __name__ == "__main__":
