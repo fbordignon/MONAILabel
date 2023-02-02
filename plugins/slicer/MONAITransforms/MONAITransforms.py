@@ -125,6 +125,7 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         self.ui.applyButton.connect("clicked(bool)", self.onApplyButton)
         self.ui.addTransformButton.connect("clicked(bool)", self.onAddTransform)
+        self.ui.editTransformButton.connect("clicked(bool)", self.onEditTransform)
         self.ui.removeTransformButton.connect("clicked(bool)", self.onRemoveTransform)
         self.ui.moveUpButton.connect("clicked(bool)", self.onMoveUpTransform)
         self.ui.moveDownButton.connect("clicked(bool)", self.onMoveDownTransform)
@@ -342,8 +343,11 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.moveUpButton.setEnabled(selected and row > 0)
         self.ui.moveDownButton.setEnabled(selected and row < self.ui.transformTable.rowCount - 1)
 
-    def onEditTransform(self, row, col):
+    def onEditTransform(self, row=-1, col=-1):
         print(f"Selected Transform for Edit: {row}")
+        row = self.ui.transformTable.currentRow() if row < 0 else row
+        if row < 0:
+            return
 
         name = str(self.ui.transformTable.item(row, 1).text())
         exp = str(self.ui.transformTable.item(row, 2).text())
