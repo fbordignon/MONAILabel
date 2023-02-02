@@ -240,7 +240,7 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.bundlesComboBox.setCurrentIndex(idx)
 
         self.ui.bundleStageComboBox.clear()
-        self.ui.bundleStageComboBox.addItems(["pre", "post"])
+        self.ui.bundleStageComboBox.addItems(["pre"])
 
     def refreshTransforms(self):
         if not self.ui.monaiVersionComboBox.currentText:
