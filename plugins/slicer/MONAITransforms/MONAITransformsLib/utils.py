@@ -129,11 +129,15 @@ def main():
     for b in sorted({b[0] for b in bundles}):
         print(b)
 
+    # MonaiUtils.download_bundle(
+    #     "spleen_ct_segmentation", "/tmp/Slicer-sachi/slicer-monai-transforms/bundle"
+    # )
+
     print("")
     print("Bundle Transforms....")
     print("----------------------------------------------------------------")
     b_transforms = MonaiUtils.transforms_from_bundle(
-        "spleen_ct_segmentation", "/tmp/Slicer-sachi/slicer-monai-transforms2023-02-01_18+24+52.939/bundle"
+        "spleen_ct_segmentation", "/tmp/Slicer-sachi/slicer-monai-transforms/bundle"
     )
     for t in b_transforms:
         print(f"{type(t)} => {t}")

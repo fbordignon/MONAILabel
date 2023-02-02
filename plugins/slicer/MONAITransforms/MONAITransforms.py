@@ -9,7 +9,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
-import json
 import logging
 import os
 
@@ -108,7 +107,7 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self._parameterNode = None
         self._updatingGUIFromParameterNode = False
         self.transforms = None
-        self.tmpdir = slicer.util.tempDirectory("slicer-monai-transforms")
+        self.tmpdir = slicer.util.tempDirectory("slicer-monai-transforms", includeDateTime=False)
 
     def setup(self):
         ScriptedLoadableModuleWidget.setup(self)
@@ -257,6 +256,42 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.modulesComboBox.setCurrentIndex(idx)
         # self.onSelectModule(self.ui.modulesComboBox.currentText)
 
+    def args_to_expression(self, class_args):
+        key_val = []
+        for key in class_args:
+            val = class_args[key]
+            if isinstance(val, str):
+                val = "'" + val + "'"
+            elif isinstance(val, tuple) or isinstance(val, list):
+                vals = []
+                for v in val:
+                    if isinstance(v, str):
+                        v = "'" + v + "'"
+                    else:
+                        v = str(v)
+                    vals.append(v)
+                if isinstance(val, tuple):
+                    val = "(" + ", ".join(vals) + ")"
+                else:
+                    val = "[" + ", ".join(vals) + "]"
+            else:
+                val = str(val)
+            key_val.append(f"{key}={val}")
+        return ", ".join(key_val)
+
+    def expression_to_args(self, exp, handle_bool=True):
+        if not exp:
+            return {}
+
+        if handle_bool:
+            exp = exp.replace("=true", "=True").replace("=false", "=False")  # safe to assume
+            exp = exp.replace(" true", " True").replace(" false", " False")
+
+        def foo(**kwargs):
+            return kwargs
+
+        return eval("foo(" + exp + ")")
+
     def onImportBundle(self):
         if not self.ui.monaiVersionComboBox.currentText:
             return
@@ -273,16 +308,14 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         table.clearContents()
         table.setRowCount(len(transforms))
 
-        pos = 0
-        for t in transforms:
+        for pos, t in enumerate(transforms):
             name = t["_target_"]
             args = copy.copy(t)
             args.pop("_target_")
 
             print(f"Importing Transform: {name} => {args}")
             table.setItem(pos, 0, qt.QTableWidgetItem(name))
-            table.setItem(pos, 1, qt.QTableWidgetItem(json.dumps(args)))
-            pos += 1
+            table.setItem(pos, 1, qt.QTableWidgetItem(self.args_to_expression(args)))
 
     def onSelectModule(self):
         module = self.ui.modulesComboBox.currentText
@@ -302,6 +335,12 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def onEditTransform(self, row, col):
         print(f"Selected Transform for Edit: {row}")
+
+        name = str(self.ui.transformTable.item(row, 0).text())
+        exp = str(self.ui.transformTable.item(row, 1).text())
+
+        dlg = CustomDialog(self.resourcePath, name, self.expression_to_args(exp))
+        dlg.exec()
 
     def onAddTransform(self):
         print(f"Adding Transform: {self.ui.modulesComboBox.currentText}.{self.ui.transformsComboBox.currentText}")
@@ -333,6 +372,39 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     def onApply(self):
         image = "/localhome/sachi/Datasets/Radiology/Task09_Spleen/imagesTr/spleen_2.nii.gz"
         label = "/localhome/sachi/Datasets/Radiology/Task09_Spleen/labelsTr/spleen_2.nii.gz"
+
+
+class CustomDialog(qt.QDialog):
+    def __init__(self, resourcePath, name, args):
+        super().__init__()
+
+        short_name = name.split(".")[-1]
+        self.setWindowTitle(f"Edit - {short_name}")
+        print(f"{name} => {args}")
+
+        layout = qt.QVBoxLayout()
+        uiWidget = slicer.util.loadUI(resourcePath("UI/MONAITransformDialog.ui"))
+        layout.addWidget(uiWidget)
+
+        self.ui = slicer.util.childWidgetVariables(uiWidget)
+        self.setLayout(layout)
+
+        url = f"https://docs.monai.io/en/stable/transforms.html#{short_name.lower()}"
+        self.ui.nameLabel.setText('<a href="' + url + '">' + short_name + "</a>")
+
+        headers = ["Name", "Value"]
+        table = self.ui.tableWidget
+        table.setRowCount(len(args) + 10)
+        table.setColumnCount(len(headers))
+        table.setHorizontalHeaderLabels(headers)
+        table.setColumnWidth(0, 200)
+        table.setColumnWidth(1, 400)
+
+        for pos, (k, v) in enumerate(args.items()):
+            table.setItem(pos, 0, qt.QTableWidgetItem(k))
+            table.setItem(pos, 1, qt.QTableWidgetItem(str(v)))
+
+        self.ui.buttonBox.accepted.connect(self.done)
 
 
 class MONAITransformsLogic(ScriptedLoadableModuleLogic):
