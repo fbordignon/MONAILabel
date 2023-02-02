@@ -140,11 +140,15 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.addTransformButton.setIcon(self.icon("icons8-insert-row-48.png"))
         self.ui.removeTransformButton.setIcon(self.icon("icons8-delete-row-48.png"))
         self.ui.editTransformButton.setIcon(self.icon("icons8-edit-row-48.png"))
+        self.ui.runTransformButton.setIcon(self.icon("icons8-red-circle-48.png"))
+        self.ui.previewTransformButton.setIcon(self.icon("icons8-preview-48.png"))
+        self.ui.clearTransformButton.setIcon(self.icon("icons8-delete-document-48.png"))
 
-        headers = ["Target", "Init Keys"]
+        headers = ["Status", "Target", "Args"]
         self.ui.transformTable.setColumnCount(len(headers))
         self.ui.transformTable.setHorizontalHeaderLabels(headers)
-        self.ui.transformTable.setColumnWidth(0, 200)
+        self.ui.transformTable.setColumnWidth(0, 60)
+        self.ui.transformTable.setColumnWidth(1, 200)
         self.ui.transformTable.setEditTriggers(qt.QTableWidget.NoEditTriggers)
         self.ui.transformTable.setSelectionBehavior(qt.QTableView.SelectRows)
 
@@ -314,8 +318,13 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             args.pop("_target_")
 
             print(f"Importing Transform: {name} => {args}")
-            table.setItem(pos, 0, qt.QTableWidgetItem(name))
-            table.setItem(pos, 1, qt.QTableWidgetItem(self.args_to_expression(args)))
+            # table.setCellWidget(pos, 0, EditButtonsWidget())
+            item = qt.QTableWidgetItem()
+            item.setIcon(self.icon("icons8-yellow-circle-48.png"))
+            table.setItem(pos, 0, item)
+
+            table.setItem(pos, 1, qt.QTableWidgetItem(name))
+            table.setItem(pos, 2, qt.QTableWidgetItem(self.args_to_expression(args)))
 
     def onSelectModule(self):
         module = self.ui.modulesComboBox.currentText
@@ -336,8 +345,8 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     def onEditTransform(self, row, col):
         print(f"Selected Transform for Edit: {row}")
 
-        name = str(self.ui.transformTable.item(row, 0).text())
-        exp = str(self.ui.transformTable.item(row, 1).text())
+        name = str(self.ui.transformTable.item(row, 1).text())
+        exp = str(self.ui.transformTable.item(row, 2).text())
 
         dlg = CustomDialog(self.resourcePath, name, self.expression_to_args(exp))
         dlg.exec()
@@ -353,10 +362,16 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def addTransform(self, pos, m, t, v):
         table = self.ui.transformTable
-        pos = pos if pos >= 0 else table.rowCount if table.currentRow() < 0 else table.currentRow()
+        pos = pos if pos >= 0 else table.rowCount if table.currentRow() < 0 else table.currentRow() + 1
+
         table.insertRow(pos)
-        table.setItem(pos, 0, qt.QTableWidgetItem(f"{m}.{t}" if m else t))
-        table.setItem(pos, 1, qt.QTableWidgetItem(v if v else ""))
+        # table.setCellWidget(pos, 0, EditButtonsWidget())
+        item = qt.QTableWidgetItem()
+        item.setIcon(self.icon("icons8-yellow-circle-48.png"))
+        table.setItem(pos, 0, item)
+
+        table.setItem(pos, 1, qt.QTableWidgetItem(f"{m}.{t}" if m else t))
+        table.setItem(pos, 2, qt.QTableWidgetItem(v if v else ""))
 
         table.selectRow(pos)
         self.onSelectTransform(pos, 0)
@@ -373,8 +388,8 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         if row < 0:
             return
 
-        t = str(self.ui.transformTable.item(row, 0).text())
-        v = str(self.ui.transformTable.item(row, 1).text())
+        t = str(self.ui.transformTable.item(row, 1).text())
+        v = str(self.ui.transformTable.item(row, 2).text())
         self.onRemoveTransform()
         self.addTransform(row - 1, None, t, v)
 
@@ -383,14 +398,47 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         if row < 0:
             return
 
-        t = str(self.ui.transformTable.item(row, 0).text())
-        v = str(self.ui.transformTable.item(row, 1).text())
+        t = str(self.ui.transformTable.item(row, 1).text())
+        v = str(self.ui.transformTable.item(row, 2).text())
         self.onRemoveTransform()
         self.addTransform(row + 1, None, t, v)
 
     def onApply(self):
         image = "/localhome/sachi/Datasets/Radiology/Task09_Spleen/imagesTr/spleen_2.nii.gz"
         label = "/localhome/sachi/Datasets/Radiology/Task09_Spleen/labelsTr/spleen_2.nii.gz"
+
+
+class EditButtonsWidget(qt.QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        layout = qt.QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        b1 = qt.QPushButton("")
+        b1.setIcon(self.icon("icons8-green-circle-16.png"))
+        b1.setMaximumWidth(20)
+        layout.addWidget(b1)
+
+        b2 = qt.QPushButton("")
+        b2.setIcon(self.icon("icons8-preview-16.png"))
+        b2.setMaximumWidth(20)
+        layout.addWidget(b2)
+
+        b3 = qt.QPushButton("")
+        b3.setIcon(self.icon("icons8-delete-document-16.png"))
+        b3.setMaximumWidth(20)
+        layout.addWidget(b3)
+
+        self.setLayout(layout)
+
+    def icon(self, name):
+        # It should not be necessary to modify this method
+        iconPath = os.path.join(os.path.dirname(__file__), "Resources", "Icons", name)
+        if os.path.exists(iconPath):
+            return qt.QIcon(iconPath)
+        return qt.QIcon()
 
 
 class CustomDialog(qt.QDialog):
