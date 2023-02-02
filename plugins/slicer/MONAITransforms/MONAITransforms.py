@@ -349,12 +349,17 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         t = self.ui.transformsComboBox.currentText
         m = self.ui.modulesComboBox.currentText
+        self.addTransform(-1, None, t, None)
 
+    def addTransform(self, pos, m, t, v):
         table = self.ui.transformTable
-        pos = table.rowCount if table.currentRow() < 0 else table.currentRow()
+        pos = pos if pos >= 0 else table.rowCount if table.currentRow() < 0 else table.currentRow()
         table.insertRow(pos)
+        table.setItem(pos, 0, qt.QTableWidgetItem(f"{m}.{t}" if m else t))
+        table.setItem(pos, 1, qt.QTableWidgetItem(v if v else ""))
 
-        table.setItem(pos, 0, qt.QTableWidgetItem(f"{m}.{t}"))
+        table.selectRow(pos)
+        self.onSelectTransform(pos, 0)
 
     def onRemoveTransform(self):
         row = self.ui.transformTable.currentRow()
@@ -364,10 +369,24 @@ class MONAITransformsWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.onSelectTransform(-1, -1)
 
     def onMoveUpTransform(self):
-        pass
+        row = self.ui.transformTable.currentRow()
+        if row < 0:
+            return
+
+        t = str(self.ui.transformTable.item(row, 0).text())
+        v = str(self.ui.transformTable.item(row, 1).text())
+        self.onRemoveTransform()
+        self.addTransform(row - 1, None, t, v)
 
     def onMoveDownTransform(self):
-        pass
+        row = self.ui.transformTable.currentRow()
+        if row < 0:
+            return
+
+        t = str(self.ui.transformTable.item(row, 0).text())
+        v = str(self.ui.transformTable.item(row, 1).text())
+        self.onRemoveTransform()
+        self.addTransform(row + 1, None, t, v)
 
     def onApply(self):
         image = "/localhome/sachi/Datasets/Radiology/Task09_Spleen/imagesTr/spleen_2.nii.gz"
