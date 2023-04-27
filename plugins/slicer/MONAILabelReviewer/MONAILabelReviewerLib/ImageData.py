@@ -27,11 +27,10 @@ to persist the data in datastore_v2.json file.
 
 
 class ImageData:
-    def __init__(self, name, fileName, nodeName, checkSum, segmented, timeStamp, comment=""):
+    def __init__(self, name, fileName, nodeName, segmented, timeStamp, comment=""):
         self.name: str = name  # equals imageId
         self.fileName: str = fileName
         self.nodeName: str = nodeName
-        self.checkSum: str = checkSum
         self.segmented: bool = segmented
         self.timeStamp: int = timeStamp
         self.comment: str = comment
@@ -92,9 +91,6 @@ class ImageData:
     def getNodeName(self) -> str:
         return self.nodeName
 
-    def getCheckSum(self) -> str:
-        return self.checkSum
-
     def getsegmentationMetaDict(self) -> dict:
         return self.segmentationMetaDict
 
@@ -113,7 +109,6 @@ class ImageData:
         return self.formatTimeStamp(self.timeStamp)
 
     def getTimeOfEditing(self, versionTag="final"):
-
         if self.isSegemented() is False or self.hasSegmentationMeta(tag=versionTag) is False:
             return ""
 
@@ -257,7 +252,6 @@ class ImageData:
         return segmentationMeta.getMeta()
 
     def hasSegmentationMeta(self, tag="final") -> bool:
-
         segmentationMeta = self.getSegmentationMetaByVersionTag(tag=tag)
         if segmentationMeta is None:
             return False
@@ -332,7 +326,6 @@ class ImageData:
             return [*self.segmentationMetaDict.keys()][0]
 
         for tag, segmentationMeta in self.segmentationMetaDict.items():
-
             if segmentationMeta.getStatus() == self.STATUS.APPROVED:
                 return tag
 
@@ -381,7 +374,6 @@ class ImageData:
         return self.prefixVersion + str(index)
 
     def deleteVersionName(self, versionTag: str):
-
         if versionTag not in self.versionNames:
             return
 
@@ -415,7 +407,6 @@ class ImageData:
         print("name: ", self.name)
         print("fileName: ", self.fileName)
         print("nodeName: ", self.nodeName)
-        print("checksum: ", self.checkSum)
         print("isSegmented: ", self.segmented)
         print("getTimeStamp: ", self.getTimeOfAnnotation())
         print("=== Version labels ====")

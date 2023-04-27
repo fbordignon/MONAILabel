@@ -21,7 +21,6 @@ Below please have a look on an example of such entry in datastore.json.
 
 class DataStoreKeys:
     def __init__(self):
-
         self.OBJECT = "objects"
         self.FINAL = "final"
         self.ORIGINAL = "original"
@@ -34,7 +33,6 @@ class DataStoreKeys:
         self.FILENAME = ["image", "info", "name"]
         self.NODE_NAME = ["image", "info", "name"]
 
-        self.CHECKSUM = ["image", "info", "checksum"]
         self.TIMESTAMP = ["image", "info", "ts"]
         self.TIMESTAMP_ANNOTATE = ["image", "info", "strategy", "annotate", "ts"]
         self.TIMESTAMP_RANDOM = ["image", "info", "strategy", "Random", "ts"]

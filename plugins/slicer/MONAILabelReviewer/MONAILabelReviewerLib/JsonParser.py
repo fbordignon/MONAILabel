@@ -48,9 +48,6 @@ class JsonParser:
     def getNodeName(self, obj: dict) -> str:
         return self.getValueByKey(self.dataStoreKeys.NODE_NAME, obj)
 
-    def getCheckSum(self, obj: dict) -> str:
-        return self.getValueByKey(self.dataStoreKeys.CHECKSUM, obj)
-
     def getTimeStamp(self, obj: dict) -> int:
         if self.hasKeyAnnotate(obj):
             return self.getValueByKey(self.dataStoreKeys.TIMESTAMP_ANNOTATE, obj)
@@ -207,12 +204,10 @@ class JsonParser:
             self.mapIdToImageData[key] = imageData
 
     def jsonToImageData(self, key: str, value: dict) -> ImageData:
-
         imageData = ImageData(
             name=key,
             fileName=self.getFileName(value),
             nodeName=self.getNodeName(value),
-            checkSum=self.getCheckSum(value),
             segmented=self.isSegmented(value),
             timeStamp=self.getTimeStamp(value),
         )

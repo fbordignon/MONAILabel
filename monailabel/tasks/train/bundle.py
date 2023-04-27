@@ -9,10 +9,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import glob
 import json
 import logging
 import os
 import subprocess
+import sys
 from typing import Dict, Optional, Sequence
 
 import monai.bundle
@@ -24,6 +26,8 @@ from monai.handlers import CheckpointLoader
 from monailabel.config import settings
 from monailabel.interfaces.datastore import Datastore
 from monailabel.interfaces.tasks.train import TrainTask
+from monailabel.utils.others.class_utils import unload_module
+from monailabel.utils.others.generic import device_list, name_to_device
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +81,9 @@ class BundleConstants:
     def key_run_name(self) -> str:
         return "run_name"
 
+    def key_displayable_configs(self) -> Sequence[str]:
+        return ["displayable_configs"]
+
 
 class BundleTrainTask(TrainTask):
     def __init__(
@@ -102,10 +109,7 @@ class BundleTrainTask(TrainTask):
 
         self.bundle_path = path
         self.bundle_config_path = os.path.join(path, "configs", config_paths[0])
-
-        self.bundle_config = ConfigParser()
-        self.bundle_config.read_config(self.bundle_config_path)
-        self.bundle_config.config.update({self.const.key_bundle_root(): self.bundle_path})  # type: ignore
+        self.bundle_config = self._load_bundle_config(self.bundle_path, self.bundle_config_path)
 
         # https://docs.monai.io/en/latest/mb_specification.html#metadata-json-file
         self.bundle_metadata_path = os.path.join(path, "configs", "metadata.json")
@@ -125,8 +129,12 @@ class BundleTrainTask(TrainTask):
         return i
 
     def config(self):
-        return {
-            "device": "cuda",  # DEVICE
+        # Add models and param optiom to train option panel
+        pytorch_models = [os.path.basename(p) for p in glob.glob(os.path.join(self.bundle_path, "models", "*.pt"))]
+        pytorch_models.sort(key=len)
+
+        config_options = {
+            "device": device_list(),  # DEVICE
             "pretrained": True,  # USE EXISTING CHECKPOINT/PRETRAINED MODEL
             "max_epochs": 50,  # TOTAL EPOCHS TO RUN
             "val_split": 0.2,  # VALIDATION SPLIT; -1 TO USE DEFAULT FROM BUNDLE
@@ -137,7 +145,15 @@ class BundleTrainTask(TrainTask):
             else ["None", "mlflow"],
             "tracking_uri": settings.MONAI_LABEL_TRACKING_URI,
             "tracking_experiment_name": "",
+            "run_id": "",  # bundle run id, if different from default
+            "model_filename": pytorch_models,
         }
+
+        for k in self.const.key_displayable_configs():
+            if self.bundle_config.get(k):
+                config_options.update(self.bundle_config.get_parsed_content(k, instantiate=True))  # type: ignore
+
+        return config_options
 
     def _fetch_datalist(self, request, datastore: Datastore):
         datalist = datastore.datalist()
@@ -175,8 +191,8 @@ class BundleTrainTask(TrainTask):
         logger.info(f"Total Records for Validation: {len(val_datalist) if val_datalist else ''}")
         return train_datalist, val_datalist
 
-    def _load_checkpoint(self, output_dir, pretrained, train_handlers):
-        load_path = os.path.join(output_dir, self.const.model_pytorch()) if pretrained else None
+    def _load_checkpoint(self, model_pytorch, pretrained, train_handlers):
+        load_path = model_pytorch if pretrained else None
         if os.path.exists(load_path):
             logger.info(f"Add Checkpoint Loader for Path: {load_path}")
 
@@ -198,15 +214,18 @@ class BundleTrainTask(TrainTask):
         max_epochs = request.get("max_epochs", 50)
         pretrained = request.get("pretrained", True)
         multi_gpu = request.get("multi_gpu", True)
+        force_multi_gpu = request.get("force_multi_gpu", False)
+        run_id = request.get("run_id", "run")
+
         multi_gpu = multi_gpu if torch.cuda.device_count() > 1 else False
 
         gpus = request.get("gpus", "all")
         gpus = list(range(torch.cuda.device_count())) if gpus == "all" else [int(g) for g in gpus.split(",")]
-        multi_gpu = True if multi_gpu and len(gpus) > 1 else False
+        multi_gpu = True if force_multi_gpu or multi_gpu and len(gpus) > 1 else False
         logger.info(f"Using Multi GPU: {multi_gpu}; GPUS: {gpus}")
         logger.info(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES')}")
 
-        device = request.get("device", "cuda")
+        device = name_to_device(request.get("device", "cuda"))
         logger.info(f"Using device: {device}; Type: {type(device)}")
 
         tracking = request.get(
@@ -224,7 +243,12 @@ class BundleTrainTask(TrainTask):
         logger.info(f"(Experiment Management) Run Name: {tracking_run_name}")
 
         train_handlers = self.bundle_config.get(self.const.key_train_handlers(), [])
-        self._load_checkpoint(os.path.join(self.bundle_path, "models"), pretrained, train_handlers)
+
+        model_filename = request.get("model_filename", "model.pt")
+        model_filename = model_filename if isinstance(model_filename, str) else model_filename[0]
+        model_pytorch = os.path.join(self.bundle_path, "models", model_filename)
+
+        self._load_checkpoint(model_pytorch, pretrained, train_handlers)
 
         overrides = {
             self.const.key_bundle_root(): self.bundle_path,
@@ -233,6 +257,12 @@ class BundleTrainTask(TrainTask):
             self.const.key_device(): device,
             self.const.key_train_handlers(): train_handlers,
         }
+
+        # update config options from user
+        for k in self.const.key_displayable_configs():
+            if self.bundle_config.get(k):
+                displayable_configs = self.bundle_config.get_parsed_content(k, instantiate=True)
+                overrides[k] = {c: request[c] for c in displayable_configs.keys()}
 
         if tracking and tracking.lower() != "none":
             overrides[self.const.key_tracking()] = tracking
@@ -246,6 +276,9 @@ class BundleTrainTask(TrainTask):
         # external validation datalist supported through bundle itself (pass -1 in the request to use the same)
         if val_ds is not None:
             overrides[self.const.key_validate_dataset_data()] = val_ds
+
+        # allow derived class to update further overrides
+        self._update_overrides(overrides)
 
         if multi_gpu:
             config_paths = [
@@ -266,6 +299,9 @@ class BundleTrainTask(TrainTask):
                 self.bundle_config.set(v, k)
             ConfigParser.export_config_file(self.bundle_config.config, train_path, indent=2)  # type: ignore
 
+            sys.path.insert(0, self.bundle_path)
+            unload_module("scripts")
+
             env = os.environ.copy()
             env["CUDA_VISIBLE_DEVICES"] = ",".join([str(g) for g in gpus])
             logger.info(f"Using CUDA_VISIBLE_DEVICES: {env['CUDA_VISIBLE_DEVICES']}")
@@ -277,7 +313,7 @@ class BundleTrainTask(TrainTask):
                 "-m",
                 "monai.bundle",
                 "run",
-                "training",
+                run_id,  # run_id, user can pass the arg
                 "--meta_file",
                 self.bundle_metadata_path,
                 "--config_file",
@@ -293,14 +329,22 @@ class BundleTrainTask(TrainTask):
 
             self.run_multi_gpu(request, cmd, env)
         else:
+            sys.path.insert(0, self.bundle_path)
+            unload_module("scripts")
+
             self.run_single_gpu(request, overrides)
+
+        sys.path.remove(self.bundle_path)
 
         logger.info("Training Finished....")
         return {}
 
     def run_single_gpu(self, request, overrides):
+        run_id = request.get("run_id", "run")
         monai.bundle.run(
-            "training",
+            run_id=run_id,
+            init_id=None,
+            final_id=None,
             meta_file=self.bundle_metadata_path,
             config_file=self.bundle_config_path,
             **overrides,
@@ -320,3 +364,12 @@ class BundleTrainTask(TrainTask):
 
         logger.info(f"Return code: {process.returncode}")
         process.stdout.close()
+
+    def _load_bundle_config(self, path, config):
+        bundle_config = ConfigParser()
+        bundle_config.read_config(config)
+        bundle_config.config.update({self.const.key_bundle_root(): path})  # type: ignore
+        return bundle_config
+
+    def _update_overrides(self, overrides):
+        return overrides

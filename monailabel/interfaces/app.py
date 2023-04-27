@@ -30,8 +30,7 @@ from dicomweb_client import DICOMwebClient
 # added to support connecting to DICOM Store Google Cloud
 from dicomweb_client.ext.gcp.session_utils import create_session_from_gcp_credentials
 from dicomweb_client.session_utils import create_session_from_user_pass
-from monai.apps import download_and_extract, download_url
-from monai.data import partition_dataset
+from monai.apps import download_and_extract
 from timeloop import Timeloop
 
 from monailabel.config import settings
@@ -54,6 +53,7 @@ from monailabel.utils.others.generic import (
     file_checksum,
     handle_torch_linalg_multithread,
     is_openslide_supported,
+    name_to_device,
     strtobool,
 )
 from monailabel.utils.others.pathology import create_asap_annotations_xml, create_dsa_annotations_json
@@ -387,12 +387,6 @@ class MONAILabelApp:
     def datastore(self) -> Datastore:
         return self._datastore
 
-    @staticmethod
-    def partition_datalist(datalist, val_split, shuffle=True):
-        if val_split > 0.0:
-            return partition_dataset(datalist, ratios=[(1 - val_split), val_split], shuffle=shuffle)
-        return datalist, []
-
     def train(self, request):
         """
         Run Training.  User APP has to implement this method to run training
@@ -595,18 +589,6 @@ class MONAILabelApp:
     def sessions(self):
         return self._sessions
 
-    @staticmethod
-    def download(resources):
-        if not resources:
-            return
-
-        for resource in resources:
-            if not os.path.exists(resource[0]):
-                os.makedirs(os.path.dirname(resource[0]), exist_ok=True)
-                logger.info(f"Downloading resource: {resource[0]} from {resource[1]}")
-                download_url(resource[1], resource[0])
-                time.sleep(1)
-
     def infer_wsi(self, request, datastore=None):
         model = request.get("model")
         if not model:
@@ -670,7 +652,8 @@ class MONAILabelApp:
         gpus = (
             list(range(torch.cuda.device_count())) if not multi_gpus or multi_gpus == "all" else multi_gpus.split(",")
         )
-        device_ids = [f"cuda:{id}" for id in gpus] if multi_gpu else [request.get("device", "cuda")]
+        device = name_to_device(request.get("device", "cuda"))
+        device_ids = [f"cuda:{id}" for id in gpus] if multi_gpu else [device]
 
         res_json = {"annotations": [None] * len(infer_tasks)}
         for idx, t in enumerate(infer_tasks):
@@ -762,9 +745,9 @@ class MONAILabelApp:
         res = self.infer(req)
         return res.get("params", {})
 
-    def model_file(self, model):
+    def model_file(self, model, validate=True):
         task = self._infers.get(model)
-        return task.get_path() if task else None
+        return task.get_path(validate) if task else None
 
     def bundle_path(self, model):
         task = self._trainers.get(model)

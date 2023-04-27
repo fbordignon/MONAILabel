@@ -56,7 +56,7 @@ from monailabel.config import settings
 from monailabel.interfaces.datastore import Datastore
 from monailabel.interfaces.tasks.train import TrainTask
 from monailabel.tasks.train.handler import PublishStatsAndModel, prepare_stats
-from monailabel.utils.others.generic import path_to_uri, remove_file
+from monailabel.utils.others.generic import device_list, name_to_device, path_to_uri, remove_file
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +157,7 @@ class BasicTrainTask(TrainTask):
         self._config = {
             "name": "train_01",
             "pretrained": True,
-            "device": "cuda",
+            "device": device_list(),
             "max_epochs": 50,
             "early_stop_patience": -1,
             "val_split": 0.2,
@@ -435,6 +435,9 @@ class BasicTrainTask(TrainTask):
         req.update(copy.deepcopy(request))
         req["run_id"] = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+        device = name_to_device(req.get("device", "cuda"))
+        req["device"] = device
+
         multi_gpu = req["multi_gpu"]
         multi_gpus = req.get("gpus", "all")
         world_size = torch.cuda.device_count() if not multi_gpus or multi_gpus == "all" else len(multi_gpus.split(","))
@@ -582,7 +585,7 @@ class BasicTrainTask(TrainTask):
         early_stop_patience = int(context.request.get("early_stop_patience", 0))
         if early_stop_patience > 0 and context.evaluator:
             kw = self.val_key_metric(context)
-            metric_name = kw.keys()[0] if kw else None
+            metric_name = list(kw.keys())[0] if kw else None
             if metric_name:
                 early_stopper = EarlyStopping(
                     patience=early_stop_patience,

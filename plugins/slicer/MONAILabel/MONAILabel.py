@@ -162,7 +162,7 @@ class _ui_MONAILabelSettingsPanel:
         )
 
         developerModeCheckBox = qt.QCheckBox()
-        developerModeCheckBox.checked = False
+        developerModeCheckBox.checked = True
         developerModeCheckBox.toolTip = "Enable this option to find options tab etc..."
         groupLayout.addRow("Developer Mode:", developerModeCheckBox)
         parent.registerProperty(
@@ -274,7 +274,7 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # Create logic class. Logic implements all computations that should be possible to run
         # in batch mode, without a graphical user interface.
         self.tmpdir = slicer.util.tempDirectory("slicer-monai-label")
-        self.logic = MONAILabelLogic(self.tmpdir)
+        self.logic = MONAILabelLogic(self.tmpdir, resourcePath=self.resourcePath)
 
         # Set icons and tune widget properties
         self.ui.serverComboBox.lineEdit().setPlaceholderText("enter server address or leave empty to use default")
@@ -358,7 +358,7 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # embedded segment editor
         self.ui.embeddedSegmentEditorWidget.setMRMLScene(slicer.mrmlScene)
         self.ui.embeddedSegmentEditorWidget.setSegmentationNodeSelectorVisible(False)
-        self.ui.embeddedSegmentEditorWidget.setMasterVolumeNodeSelectorVisible(False)
+        self.ui.embeddedSegmentEditorWidget.setSourceVolumeNodeSelectorVisible(False)
         self.ui.embeddedSegmentEditorWidget.setMRMLSegmentEditorNode(self.logic.get_segment_editor_node())
 
         # options section
@@ -1076,11 +1076,12 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                     detailedText=traceback.format_exc(),
                 )
                 return
-        except:
+        except BaseException as e:
+            msg = f"Message:: {e.msg}" if hasattr(e, "msg") else ""
             slicer.util.errorDisplay(
                 "Failed to fetch models from remote server. "
                 "Make sure server address is correct and <server_uri>/info/ "
-                "is accessible in browser",
+                f"is accessible in browser.\n{msg}",
                 detailedText=traceback.format_exc(),
             )
             return
@@ -1147,9 +1148,11 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
             time.sleep(1)
             self.updateGUIFromParameterNode()
-        except:
+        except BaseException as e:
+            msg = f"Message:: {e.msg}" if hasattr(e, "msg") else ""
             slicer.util.errorDisplay(
-                "Failed to run training in MONAI Label Server", detailedText=traceback.format_exc()
+                f"Failed to run training in MONAI Label Server.\n{msg}",
+                detailedText=traceback.format_exc(),
             )
         finally:
             qt.QApplication.restoreOverrideCursor()
@@ -1177,8 +1180,12 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             qt.QApplication.setOverrideCursor(qt.Qt.WaitCursor)
             self.updateServerSettings()
             status = self.logic.train_stop()
-        except:
-            slicer.util.errorDisplay("Failed to stop Training Task", detailedText=traceback.format_exc())
+        except BaseException as e:
+            msg = f"Message:: {e.msg}" if hasattr(e, "msg") else ""
+            slicer.util.errorDisplay(
+                f"Failed to stop Training Task.\n{msg}",
+                detailedText=traceback.format_exc(),
+            )
         finally:
             qt.QApplication.restoreOverrideCursor()
 
@@ -1263,8 +1270,17 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             if slicer.util.settingsValue("MONAILabel/originalLabel", True, converter=slicer.util.toBool):
                 try:
                     datastore = self.logic.datastore()
-                    labels = datastore["objects"][image_id]["labels"]["original"]["info"]["params"]["label_names"]
-                    labels = labels.keys()
+                    label_info = datastore["objects"][image_id]["labels"]["original"]["info"]
+                    labels = label_info.get("params", {}).get("label_names", {})
+
+                    if labels:
+                        # labels are available in original label info
+                        labels = labels.keys()
+                    else:
+                        # labels not available
+                        # assume labels in app info are valid for original label file
+                        labels = self.logic.info().get("labels")
+
                     # ext = datastore['objects'][image_id]['labels']['original']['ext']
                     maskFile = self.logic.download_label(image_id, "original")
                     self.updateSegmentationMask(maskFile, list(labels))
@@ -1275,9 +1291,11 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
             self.initSample(sample)
 
-        except:
+        except BaseException as e:
+            msg = f"Message:: {e.msg}" if hasattr(e, "msg") else ""
             slicer.util.errorDisplay(
-                "Failed to fetch Sample from MONAI Label Server", detailedText=traceback.format_exc()
+                f"Failed to fetch Sample from MONAI Label Server.\n{msg}",
+                detailedText=traceback.format_exc(),
             )
         finally:
             qt.QApplication.restoreOverrideCursor()
@@ -1294,7 +1312,7 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # Create Empty Segments for all labels for this node
         self.createSegmentNode()
         self.ui.embeddedSegmentEditorWidget.setSegmentationNode(self._segmentNode)
-        self.ui.embeddedSegmentEditorWidget.setMasterVolumeNode(self._volumeNode)
+        self.ui.embeddedSegmentEditorWidget.setSourceVolumeNode(self._volumeNode)
 
         self.createScribblesROINode()
         self.ui.scribblesPlaceWidget.setCurrentNode(self._scribblesROINode)
@@ -1321,7 +1339,7 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     def getPermissionForImageDataUpload(self):
         return slicer.util.confirmOkCancelDisplay(
-            "Master volume - without any additional patient information -"
+            "Source volume - without any additional patient information -"
             " will be sent to remote data processing server: {}.\n\n"
             "Click 'OK' to proceed with the segmentation.\n"
             "Click 'Cancel' to not upload any data and cancel segmentation.\n".format(self.serverUrl()),
@@ -1359,7 +1377,8 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
             self.updateGUIFromParameterNode()
             return True
-        except:
+        except BaseException as e:
+            msg = f"Message:: {e.msg}" if hasattr(e, "msg") else ""
             self.reportProgress(100)
             qt.QApplication.restoreOverrideCursor()
             if session:
@@ -1369,7 +1388,10 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 )
                 self.current_sample["session"] = None
             else:
-                slicer.util.errorDisplay("Failed to upload volume to Server", detailedText=traceback.format_exc())
+                slicer.util.errorDisplay(
+                    f"Failed to upload volume to Server.\n{msg}",
+                    detailedText=traceback.format_exc(),
+                )
             return False
 
     def onImportLabel(self):
@@ -1450,8 +1472,12 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 except:
                     logging.info("Failed to stop training; or already stopped")
                 self.onTraining()
-        except:
-            slicer.util.errorDisplay("Failed to save Label to MONAI Label Server", detailedText=traceback.format_exc())
+        except BaseException as e:
+            msg = f"Message:: {e.msg}" if hasattr(e, "msg") else ""
+            slicer.util.errorDisplay(
+                f"Failed to save Label to MONAI Label Server.\n{msg}",
+                detailedText=traceback.format_exc(),
+            )
         finally:
             qt.QApplication.restoreOverrideCursor()
             self.reportProgress(100)
@@ -1502,9 +1528,11 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             if labels and isinstance(labels, dict):
                 labels = [k for k, _ in sorted(labels.items(), key=lambda item: item[1])]
             self.updateSegmentationMask(result_file, labels)
-        except:
+        except BaseException as e:
+            msg = f"Message:: {e.msg}" if hasattr(e, "msg") else ""
             slicer.util.errorDisplay(
-                "Failed to run inference in MONAI Label Server", detailedText=traceback.format_exc()
+                f"Failed to run inference in MONAI Label Server.\n{msg}",
+                detailedText=traceback.format_exc(),
             )
         finally:
             qt.QApplication.restoreOverrideCursor()
@@ -1613,9 +1641,12 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
             freeze = label if self.ui.freezeUpdateCheckBox.checked else None
             self.updateSegmentationMask(result_file, labels, None if deepgrow_3d else sliceIndex, freeze=freeze)
-        except:
-            logging.exception("Unknown Exception")
-            slicer.util.errorDisplay(operationDescription + " - unexpected error.", detailedText=traceback.format_exc())
+        except BaseException as e:
+            msg = f"Message:: {e.msg}" if hasattr(e, "msg") else ""
+            slicer.util.errorDisplay(
+                operationDescription + f" - unexpected error.\n{msg}",
+                detailedText=traceback.format_exc(),
+            )
         finally:
             qt.QApplication.restoreOverrideCursor()
 
@@ -1731,7 +1762,7 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 addedSegmentIds = [segmentation.GetNthSegmentID(existingCount + i) for i in range(addedCount)]
 
                 self.ui.embeddedSegmentEditorWidget.setSegmentationNode(segmentationNode)
-                self.ui.embeddedSegmentEditorWidget.setMasterVolumeNode(self._volumeNode)
+                self.ui.embeddedSegmentEditorWidget.setSourceVolumeNode(self._volumeNode)
 
                 for i, segmentId in enumerate(addedSegmentIds):
                     label = labels[i] if i < len(labels) else f"unknown {i}"
@@ -1847,7 +1878,7 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         # change segmentation display properties to "see through" the scribbles
         # further explanation at:
-        # https://apidocs.slicer.org/master/classvtkMRMLSegmentationDisplayNode.html
+        # https://apidocs.slicer.org/main/classvtkMRMLSegmentationDisplayNode.html
         segmentationDisplayNode = self._segmentNode.GetDisplayNode()
 
         # background
@@ -1917,9 +1948,10 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             # display result from server
             self.reportProgress(90)
             self.updateSegmentationMask(result_file, [selected_label_name])
-        except:
+        except BaseException as e:
+            msg = f"Message:: {e.msg}" if hasattr(e, "msg") else ""
             slicer.util.errorDisplay(
-                f"Failed to post process label on MONAI Label Server using {scribblesMethod}",
+                f"Failed to post process label on MONAI Label Server using {scribblesMethod}.\n{msg}",
                 detailedText=traceback.format_exc(),
             )
         finally:
@@ -2004,7 +2036,6 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.scribblesSelector.setCurrentIndex(0)
 
     def onResetScribbles(self):
-
         # reset scribbles mode
         self.scribblesMode = None
 
@@ -2145,12 +2176,16 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
 
 class MONAILabelLogic(ScriptedLoadableModuleLogic):
-    def __init__(self, tmpdir=None, server_url=None, progress_callback=None, client_id=None):
+    def __init__(self, tmpdir=None, server_url=None, progress_callback=None, client_id=None, resourcePath=None):
         ScriptedLoadableModuleLogic.__init__(self)
 
         self.server_url = server_url
         self.tmpdir = slicer.util.tempDirectory("slicer-monai-label") if tmpdir is None else tmpdir
         self.client_id = client_id
+        self.resourcePath = resourcePath
+        self.username = None
+        self.password = None
+        self.auth_token = None
 
         self.volumeToSessions = dict()
         self.progress_callback = progress_callback
@@ -2167,6 +2202,11 @@ class MONAILabelLogic(ScriptedLoadableModuleLogic):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def setServer(self, server_url=None):
+        if self.server_url != server_url:
+            self.username = None
+            self.password = None
+            self.auth_token = None
+
         self.server_url = server_url if server_url else "http://127.0.0.1:8000"
 
     def setClientId(self, client_id):
@@ -2192,40 +2232,63 @@ class MONAILabelLogic(ScriptedLoadableModuleLogic):
             segmentEditorNode = slicer.mrmlScene.AddNode(segmentEditorNode)
         return segmentEditorNode
 
+    def _client(self):
+        mc = MONAILabelClient(self.server_url, self.tmpdir, self.client_id)
+        if mc.auth_enabled():
+            if not self.username or not self.password:
+                dlg = LoginDialog(username=self.client_id, password="", resourcePath=self.resourcePath)
+                dlg.exec()
+
+                self.username = dlg.ui.username.text
+                self.password = dlg.ui.password.text
+
+            if self.auth_token:
+                mc.update_auth(self.auth_token)
+
+            # TODO:: JWT token can be validated (with additional py dependencies) to avoid further calls to server
+            if not self.auth_token or not mc.auth_valid_token():
+                try:
+                    print(f"Fetching new Token for: {self.username}")
+                    self.auth_token = mc.auth_token(self.username, self.password)
+                    mc.update_auth(self.auth_token)
+                except:
+                    self.username = None
+                    self.password = None
+                    self.auth_token = None
+        return mc
+
     def info(self):
-        return MONAILabelClient(self.server_url, self.tmpdir, self.client_id).info()
+        return self._client().info()
 
     def datastore(self):
-        return MONAILabelClient(self.server_url, self.tmpdir, self.client_id).datastore()
+        return self._client().datastore()
 
     def download_label(self, label_id, tag):
-        return MONAILabelClient(self.server_url, self.tmpdir, self.client_id).download_label(label_id, tag)
+        return self._client().download_label(label_id, tag)
 
     def next_sample(self, strategy, params={}):
-        return MONAILabelClient(self.server_url, self.tmpdir, self.client_id).next_sample(strategy, params)
+        return self._client().next_sample(strategy, params)
 
     def create_session(self, image_in):
-        return MONAILabelClient(self.server_url, self.tmpdir, self.client_id).create_session(image_in)
+        return self._client().create_session(image_in)
 
     def get_session(self, session_id):
-        return MONAILabelClient(self.server_url, self.tmpdir, self.client_id).get_session(session_id)
+        return self._client().get_session(session_id)
 
     def remove_session(self, session_id):
-        return MONAILabelClient(self.server_url, self.tmpdir, self.client_id).remove_session(session_id)
+        return self._client().remove_session(session_id)
 
     def upload_image(self, image_in, image_id=None):
-        return MONAILabelClient(self.server_url, self.tmpdir, self.client_id).upload_image(image_in, image_id)
+        return self._client().upload_image(image_in, image_id)
 
     def save_label(self, image_in, label_in, params):
-        return MONAILabelClient(self.server_url, self.tmpdir, self.client_id).save_label(
-            image_in, label_in, params=params
-        )
+        return self._client().save_label(image_in, label_in, params=params)
 
     def infer(self, model, image_in, params={}, label_in=None, file=None, session_id=None):
         logging.debug("Preparing input data for segmentation")
         self.reportProgress(0)
 
-        client = MONAILabelClient(self.server_url, self.tmpdir, self.client_id)
+        client = self._client()
         params["result_extension"] = ".nrrd"  # expect .nrrd
         params["result_dtype"] = "uint8"
         result_file, params = client.infer(model, image_in, params, label_in, file, session_id)
@@ -2237,13 +2300,32 @@ class MONAILabelLogic(ScriptedLoadableModuleLogic):
         return result_file, params
 
     def train_start(self, model=None, params={}):
-        return MONAILabelClient(self.server_url, self.tmpdir, self.client_id).train_start(model, params)
+        return self._client().train_start(model, params)
 
     def train_status(self, check_if_running):
-        return MONAILabelClient(self.server_url, self.tmpdir, self.client_id).train_status(check_if_running)
+        return self._client().train_status(check_if_running)
 
     def train_stop(self):
-        return MONAILabelClient(self.server_url, self.tmpdir, self.client_id).train_stop()
+        return self._client().train_stop()
+
+
+class LoginDialog(qt.QDialog):
+    def __init__(self, username, password, resourcePath):
+        super().__init__()
+        self.setWindowTitle("User Login")
+
+        layout = qt.QVBoxLayout()
+        uiWidget = slicer.util.loadUI(resourcePath("UI/LoginDialog.ui"))
+        layout.addWidget(uiWidget)
+
+        self.ui = slicer.util.childWidgetVariables(uiWidget)
+        self.setLayout(layout)
+        self.ui.username.setText(username)
+        self.ui.password.setText(password if password else "")
+        self.ui.loginButton.connect("clicked(bool)", self.onLogin)
+
+    def onLogin(self):
+        self.close()
 
 
 class MONAILabelTest(ScriptedLoadableModuleTest):
