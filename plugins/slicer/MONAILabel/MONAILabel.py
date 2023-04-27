@@ -213,6 +213,7 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self._parameterNode = None
         self._volumeNode = None
         self._segmentNode = None
+        self._extraSegmentNode = None
         self._scribblesROINode = None
         self._volumeNodes = []
         self._updatingGUIFromParameterNode = False
@@ -406,6 +407,7 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         self._volumeNode = None
         self._segmentNode = None
+        self._extraSegmentNode = None
         self._volumeNodes.clear()
         self.setParameterNode(None)
         self.current_sample = None
@@ -1270,6 +1272,30 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             if slicer.util.settingsValue("MONAILabel/originalLabel", True, converter=slicer.util.toBool):
                 try:
                     datastore = self.logic.datastore()
+                    label_info = datastore["objects"][image_id]["labels"]["extra"]["info"]
+
+                    labels = label_info.get("params", {}).get("label_names", {})
+                    if labels:
+                        # labels are available in original label info
+                        labels = labels.keys()
+                    else:
+                        # labels not available
+                        # assume labels in app info are valid for original label file
+                        labels = self.logic.info().get("labels")
+
+                    # ext = datastore['objects'][image_id]['labels']['original']['ext']
+                    maskFile = self.logic.download_label(image_id, "extra")
+
+                    self.updateSegmentationMask(maskFile, list(labels), segmentNode=self._extraSegmentNode)
+
+                    print("Extra label uploaded! ")
+
+                except:
+                    print("Extra label not found ... ")
+
+            if slicer.util.settingsValue("MONAILabel/originalLabel", True, converter=slicer.util.toBool):
+                try:
+                    datastore = self.logic.datastore()
                     label_info = datastore["objects"][image_id]["labels"]["original"]["info"]
                     labels = label_info.get("params", {}).get("label_names", {})
 
@@ -1284,12 +1310,37 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                     # ext = datastore['objects'][image_id]['labels']['original']['ext']
                     maskFile = self.logic.download_label(image_id, "original")
                     self.updateSegmentationMask(maskFile, list(labels))
+
                     print("Original label uploaded! ")
 
                 except:
                     print("Original label not found ... ")
 
             self.initSample(sample)
+
+            segmentationNode = self._extraSegmentNode
+            segmentationNode.SetDisplayVisibility(False)
+            extra_seg = segmentationNode.GetSegmentation()
+            totalSegments = extra_seg.GetNumberOfSegments()
+            nonExtraSegmentIDs = [
+                extra_seg.GetNthSegmentID(i)
+                for i in range(totalSegments)
+                if not extra_seg.GetNthSegmentID(i).startswith("(extra)")
+            ]
+            for segmentId in nonExtraSegmentIDs:
+                extra_seg.RemoveSegment(segmentId)
+
+            segmentationNode = self._segmentNode
+            segmentation = segmentationNode.GetSegmentation()
+            totalSegments = segmentation.GetNumberOfSegments()
+            extraSegmentIDs = [
+                segmentation.GetNthSegmentID(i)
+                for i in range(totalSegments)
+                if segmentation.GetNthSegmentID(i).startswith("(extra)")
+            ]
+            for segmentId in extraSegmentIDs:
+                segmentation.RemoveSegment(segmentId)
+                extra_seg.GetSegment(segmentId).SetName(segmentId.replace("(extra) ", ""))
 
         except BaseException as e:
             msg = f"Message:: {e.msg}" if hasattr(e, "msg") else ""
@@ -1323,7 +1374,9 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.logic.get_segment_editor_node().SetOverwriteMode(slicer.vtkMRMLSegmentEditorNode.OverwriteNone)
 
         if self.info.get("labels"):
-            self.updateSegmentationMask(None, self.info.get("labels"))
+            labels = self.info.get("labels")
+            self.updateSegmentationMask(None, labels)
+            self.updateSegmentationMask(None, labels, segmentNode=self._extraSegmentNode)
 
         # Check if user wants to run auto-segmentation on new sample
         if autosegment and slicer.util.settingsValue(
@@ -1664,6 +1717,11 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self._segmentNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
             self._segmentNode.SetReferenceImageGeometryParameterFromVolumeNode(self._volumeNode)
             self._segmentNode.SetName(name)
+        if self._extraSegmentNode is None:
+            name = "segmentation_extra_" + self._volumeNode.GetName()
+            self._extraSegmentNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
+            self._extraSegmentNode.SetReferenceImageGeometryParameterFromVolumeNode(self._volumeNode)
+            self._extraSegmentNode.SetName(name)
 
     def createScribblesROINode(self):
         if self._volumeNode is None:
@@ -1682,14 +1740,14 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         color = GenericAnatomyColors.get(name.lower())
         return [c / 255.0 for c in color] if color else None
 
-    def updateSegmentationMask(self, in_file, labels, sliceIndex=None, freeze=None):
+    def updateSegmentationMask(self, in_file, labels, sliceIndex=None, freeze=None, segmentNode=None):
         # TODO:: Add ROI Node (for Bounding Box if provided in the result)
         start = time.time()
         logging.debug(f"Update Segmentation Mask from: {in_file}")
         if in_file and not os.path.exists(in_file):
             return False
 
-        segmentationNode = self._segmentNode
+        segmentationNode = self._segmentNode if segmentNode == None else segmentNode
         segmentation = segmentationNode.GetSegmentation()
 
         if in_file is None:
