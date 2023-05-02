@@ -76,7 +76,7 @@ class _ui_MONAILabelSettingsPanel:
         )
 
         fileExtension = qt.QLineEdit()
-        fileExtension.setText(".nii.gz")
+        fileExtension.setText(".seg.nrrd")
         fileExtension.toolTip = "Default extension for uploading images/labels"
         groupLayout.addRow("File Extension:", fileExtension)
         parent.registerProperty(
@@ -125,7 +125,7 @@ class _ui_MONAILabelSettingsPanel:
         )
 
         askForUserNameCheckBox = qt.QCheckBox()
-        askForUserNameCheckBox.checked = False
+        askForUserNameCheckBox.checked = True
         askForUserNameCheckBox.toolTip = (
             "Enable this option to ask for the user name every time the MONAILabel "
             + "extension is loaded for the first time"
@@ -139,7 +139,7 @@ class _ui_MONAILabelSettingsPanel:
         )
 
         allowOverlapCheckBox = qt.QCheckBox()
-        allowOverlapCheckBox.checked = False
+        allowOverlapCheckBox.checked = True
         allowOverlapCheckBox.toolTip = "Enable this option to allow overlapping segmentations"
         groupLayout.addRow("Allow Overlapping Segmentations:", allowOverlapCheckBox)
         parent.registerProperty(
@@ -1756,7 +1756,7 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                     segmentation.AddEmptySegment(label, label, self.getLabelColor(label))
             return True
 
-        if in_file.endswith(".seg.nrrd") and self.file_ext == ".seg.nrrd":
+        if in_file.endswith(".nrrd") and self.file_ext == ".seg.nrrd":
             source_node = slicer.modules.segmentations.logic().LoadSegmentationFromFile(in_file, False)
             destination_node = segmentationNode
             destination_segmentations = destination_node.GetSegmentation()
