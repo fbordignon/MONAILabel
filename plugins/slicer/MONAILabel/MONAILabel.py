@@ -76,7 +76,7 @@ class _ui_MONAILabelSettingsPanel:
         )
 
         fileExtension = qt.QLineEdit()
-        fileExtension.setText(".seg.nrrd")
+        fileExtension.setText("seg.nrrd")
         fileExtension.toolTip = "Default extension for uploading images/labels"
         groupLayout.addRow("File Extension:", fileExtension)
         parent.registerProperty(
@@ -139,7 +139,7 @@ class _ui_MONAILabelSettingsPanel:
         )
 
         allowOverlapCheckBox = qt.QCheckBox()
-        allowOverlapCheckBox.checked = True
+        allowOverlapCheckBox.checked = False
         allowOverlapCheckBox.toolTip = "Enable this option to allow overlapping segmentations"
         groupLayout.addRow("Allow Overlapping Segmentations:", allowOverlapCheckBox)
         parent.registerProperty(
@@ -1375,6 +1375,7 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         if self.info.get("labels"):
             labels = self.info.get("labels")
+            labels = [label for label in labels if label != "background"]
             self.updateSegmentationMask(None, labels)
             self.updateSegmentationMask(None, labels, segmentNode=self._extraSegmentNode)
 
@@ -1505,13 +1506,7 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 label_in = tempfile.NamedTemporaryFile(suffix=self.file_ext, dir=self.tmpdir).name
                 self.reportProgress(5)
 
-                if (
-                    slicer.util.settingsValue("MONAILabel/allowOverlappingSegments", True, converter=slicer.util.toBool)
-                    and slicer.util.settingsValue("MONAILabel/fileExtension", self.file_ext) == ".seg.nrrd"
-                ):
-                    slicer.util.saveNode(segmentationNode, label_in)
-                else:
-                    slicer.util.saveNode(labelmapVolumeNode, label_in)
+                slicer.util.saveNode(segmentationNode, label_in)
                 self.reportProgress(30)
 
             self.updateServerSettings()
@@ -1580,7 +1575,7 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             )
             if labels and isinstance(labels, dict):
                 labels = [k for k, _ in sorted(labels.items(), key=lambda item: item[1])]
-            self.updateSegmentationMask(result_file, labels)
+            self.updateSegmentationMask(result_file, labels, deep_copy=False)
         except BaseException as e:
             msg = f"Message:: {e.msg}" if hasattr(e, "msg") else ""
             slicer.util.errorDisplay(
@@ -1693,7 +1688,9 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                     labels = [k for k, _ in sorted(labels.items(), key=lambda item: item[1])]
 
             freeze = label if self.ui.freezeUpdateCheckBox.checked else None
-            self.updateSegmentationMask(result_file, labels, None if deepgrow_3d else sliceIndex, freeze=freeze)
+            self.updateSegmentationMask(
+                result_file, labels, None if deepgrow_3d else sliceIndex, freeze=freeze, deep_copy=False
+            )
         except BaseException as e:
             msg = f"Message:: {e.msg}" if hasattr(e, "msg") else ""
             slicer.util.errorDisplay(
@@ -1740,7 +1737,7 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         color = GenericAnatomyColors.get(name.lower())
         return [c / 255.0 for c in color] if color else None
 
-    def updateSegmentationMask(self, in_file, labels, sliceIndex=None, freeze=None, segmentNode=None):
+    def updateSegmentationMask(self, in_file, labels, sliceIndex=None, freeze=None, segmentNode=None, deep_copy=False):
         # TODO:: Add ROI Node (for Bounding Box if provided in the result)
         start = time.time()
         logging.debug(f"Update Segmentation Mask from: {in_file}")
@@ -1756,7 +1753,7 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                     segmentation.AddEmptySegment(label, label, self.getLabelColor(label))
             return True
 
-        if in_file.endswith(".nrrd") and self.file_ext == ".seg.nrrd":
+        if in_file.endswith(".nrrd") and self.file_ext == ".seg.nrrd" and deep_copy == True:
             source_node = slicer.modules.segmentations.logic().LoadSegmentationFromFile(in_file, False)
             destination_node = segmentationNode
             destination_segmentations = destination_node.GetSegmentation()
