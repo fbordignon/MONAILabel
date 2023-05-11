@@ -209,6 +209,7 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         ScriptedLoadableModuleWidget.__init__(self, parent)
         VTKObservationMixin.__init__(self)  # needed for parameter node observation
 
+        self.labels = None
         self.logic = None
         self._parameterNode = None
         self._volumeNode = None
@@ -1375,9 +1376,14 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         if self.info.get("labels"):
             labels = self.info.get("labels")
-            labels = [label for label in labels if label != "background"]
-            self.updateSegmentationMask(None, labels)
-            self.updateSegmentationMask(None, labels, segmentNode=self._extraSegmentNode)
+
+            edit_labels = [label for label in labels if label != "background" and not label.startswith("outro")]
+            edit_labels += self.logic.get_new_labels(edit_labels)
+
+            self.labels = [label for label in edit_labels if not label.startswith("(extra)")]
+
+            self.updateSegmentationMask(None, edit_labels)
+            self.updateSegmentationMask(None, edit_labels, segmentNode=self._extraSegmentNode)
 
         # Check if user wants to run auto-segmentation on new sample
         if autosegment and slicer.util.settingsValue(
@@ -1570,12 +1576,7 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             result_file, params = self.logic.infer(model, image_file, params, session_id=self.getSessionId())
             print(f"Result Params for Segmentation: {params}")
 
-            labels = (
-                params.get("label_names") if params and params.get("label_names") else self.models[model].get("labels")
-            )
-            if labels and isinstance(labels, dict):
-                labels = [k for k, _ in sorted(labels.items(), key=lambda item: item[1])]
-            self.updateSegmentationMask(result_file, labels, deep_copy=False)
+            self.updateSegmentationMask(result_file, self.labels, deep_copy=False)
         except BaseException as e:
             msg = f"Message:: {e.msg}" if hasattr(e, "msg") else ""
             slicer.util.errorDisplay(
@@ -1678,18 +1679,10 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             image_file = self.current_sample["id"]
             result_file, params = self.logic.infer(model, image_file, params, session_id=self.getSessionId())
             print(f"Result Params for Deepgrow/Deepedit: {params}")
-            if labels is None:
-                labels = (
-                    params.get("label_names")
-                    if params and params.get("label_names")
-                    else self.models[model].get("labels")
-                )
-                if labels and isinstance(labels, dict):
-                    labels = [k for k, _ in sorted(labels.items(), key=lambda item: item[1])]
 
             freeze = label if self.ui.freezeUpdateCheckBox.checked else None
             self.updateSegmentationMask(
-                result_file, labels, None if deepgrow_3d else sliceIndex, freeze=freeze, deep_copy=False
+                result_file, self.labels, None if deepgrow_3d else sliceIndex, freeze=freeze, deep_copy=False
             )
         except BaseException as e:
             msg = f"Message:: {e.msg}" if hasattr(e, "msg") else ""
@@ -2362,6 +2355,21 @@ class MONAILabelLogic(ScriptedLoadableModuleLogic):
 
     def train_stop(self):
         return self._client().train_stop()
+
+    # @LTrace
+    def get_new_labels(self, labels):
+        new_labels = []
+        datastore = self.datastore()
+
+        for image_id in datastore["objects"]:
+            if "labels" in datastore["objects"][image_id]:
+                if "final" in datastore["objects"][image_id]["labels"]:
+                    if "label_info" in datastore["objects"][image_id]["labels"]["final"]["info"]:
+                        for label_info in datastore["objects"][image_id]["labels"]["final"]["info"]["label_info"]:
+                            if label_info["name"] not in labels:
+                                new_labels.append(label_info["name"])
+
+        return new_labels
 
 
 class LoginDialog(qt.QDialog):
