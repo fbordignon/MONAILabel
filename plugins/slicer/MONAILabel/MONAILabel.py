@@ -31,6 +31,7 @@ from MONAILabelLib import GenericAnatomyColors, MONAILabelClient
 from slicer.ScriptedLoadableModule import *
 from slicer.util import VTKObservationMixin
 
+from ltrace.remote.jobs import JobManager
 
 class MONAILabel(ScriptedLoadableModule):
     def __init__(self, parent):
@@ -1102,6 +1103,11 @@ class MONAILabelWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.models[k] = v
 
         self.updateGUIFromParameterNode()
+
+        for job in JobManager.jobs:
+            if JobManager.jobs[job].job_type == "monai" and JobManager.jobs[job].status == "RUNNING":
+                node_ip = JobManager.jobs[job].details.get("nodeIP", "")
+                serverUrl = f"http://{node_ip}:8000"
 
         msg = ""
         msg += "-----------------------------------------------------\t\n"
